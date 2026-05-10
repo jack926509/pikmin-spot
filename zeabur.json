@@ -1,0 +1,5 @@
+{
+  "name": "pikmin-coord-bot",
+  "build": { "buildCommand": "pip install -r requirements.txt" },
+  "start": { "startCommand": "python -m src.main" }
+}

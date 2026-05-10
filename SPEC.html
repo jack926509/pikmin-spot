@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pikmin Bloom 菇點座標識別 Bot · 開發規格書</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<style>
+:root {
+  --bg: #F5F1E8;
+  --bg-deeper: #EDE6D6;
+  --paper: #FBF8F1;
+  --ink: #1F1B15;
+  --ink-soft: #4A4239;
+  --ink-muted: #8A8275;
+  --line: #D8CFB8;
+  --line-soft: #E8E0CC;
+  --leaf: #2D5C1E;
+  --leaf-bright: #4A8A2E;
+  --berry: #B83A2E;
+  --moss: #6B8A4E;
+  --gold: #C49A3D;
+  --code-bg: #1A1714;
+  --code-text: #E8DFC9;
+  --shadow: 0 1px 2px rgba(31,27,21,0.04), 0 4px 16px rgba(31,27,21,0.06);
+  --shadow-lg: 0 4px 12px rgba(31,27,21,0.08), 0 16px 48px rgba(31,27,21,0.10);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+
+body {
+  font-family: 'DM Sans', 'Noto Sans TC', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.7;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  background-image:
+    radial-gradient(circle at 0% 0%, rgba(74,138,46,0.04) 0%, transparent 40%),
+    radial-gradient(circle at 100% 100%, rgba(196,154,61,0.05) 0%, transparent 50%);
+  background-attachment: fixed;
+}
+
+/* ── Layout ─────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  max-width: 1440px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+aside.toc {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 40px 32px 40px 40px;
+  border-right: 1px solid var(--line-soft);
+  background: var(--paper);
+  font-size: 13.5px;
+}
+
+aside.toc::-webkit-scrollbar { width: 6px; }
+aside.toc::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+
+.toc-brand {
+  font-family: 'Fraunces', serif;
+  font-weight: 600;
+  font-size: 17px;
+  margin-bottom: 4px;
+  color: var(--leaf);
+  letter-spacing: -0.01em;
+}
+.toc-brand-sub {
+  font-size: 11.5px;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  margin-bottom: 32px;
+}
+
+.toc-section {
+  margin-bottom: 24px;
+}
+.toc-label {
+  font-family: 'Fraunces', serif;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-muted);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.toc ul { list-style: none; }
+.toc li { margin: 0; }
+.toc a {
+  display: block;
+  padding: 4px 0;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 13px;
+  transition: color 0.15s, padding-left 0.15s;
+  border-left: 2px solid transparent;
+  padding-left: 10px;
+  margin-left: -10px;
+}
+.toc a:hover {
+  color: var(--leaf);
+  padding-left: 14px;
+  border-left-color: var(--leaf-bright);
+}
+.toc a.phase {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.toc a.phase::before {
+  content: '└─ ';
+  color: var(--ink-muted);
+  margin-right: 4px;
+}
+
+main {
+  padding: 56px 80px 120px;
+  max-width: 980px;
+}
+
+/* ── Hero ───────────────────────────────────── */
+.hero {
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 48px;
+  margin-bottom: 64px;
+  position: relative;
+}
+.hero-meta {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-bottom: 24px;
+}
+.hero-meta .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--ink-muted); }
+.hero-meta .v {
+  background: var(--leaf);
+  color: var(--paper);
+  padding: 3px 9px;
+  border-radius: 3px;
+  letter-spacing: 0.08em;
+}
+h1 {
+  font-family: 'Fraunces', serif;
+  font-weight: 400;
+  font-size: clamp(36px, 5vw, 56px);
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin-bottom: 20px;
+}
+h1 em {
+  font-style: italic;
+  font-weight: 300;
+  color: var(--leaf);
+}
+.hero-sub {
+  font-size: 18px;
+  color: var(--ink-soft);
+  max-width: 680px;
+  line-height: 1.6;
+}
+.hero-kpi {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  margin-top: 40px;
+  background: var(--line-soft);
+  border: 1px solid var(--line-soft);
+}
+.kpi-cell {
+  padding: 20px 24px;
+  background: var(--paper);
+}
+.kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 8px;
+}
+.kpi-value {
+  font-family: 'Fraunces', serif;
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--leaf);
+  letter-spacing: -0.01em;
+}
+.kpi-value small {
+  font-size: 14px;
+  color: var(--ink-muted);
+  font-weight: 300;
+  margin-left: 4px;
+}
+
+/* ── Headings ───────────────────────────────── */
+h2 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 32px;
+  letter-spacing: -0.015em;
+  margin: 80px 0 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line-soft);
+  position: relative;
+  scroll-margin-top: 24px;
+}
+h2 .num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--ink-muted);
+  letter-spacing: 0.1em;
+  display: block;
+  margin-bottom: 6px;
+}
+h3 {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  font-size: 22px;
+  margin: 36px 0 14px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+h4 {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+  margin: 24px 0 12px;
+}
+
+p { margin-bottom: 16px; color: var(--ink-soft); }
+p strong { color: var(--ink); font-weight: 600; }
+
+a { color: var(--leaf); text-decoration: underline; text-decoration-color: rgba(45,92,30,0.3); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--leaf); }
+
+ul, ol { margin: 12px 0 20px 24px; color: var(--ink-soft); }
+ul li, ol li { margin-bottom: 8px; padding-left: 4px; }
+
+code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.88em;
+  background: var(--bg-deeper);
+  padding: 2px 7px;
+  border-radius: 3px;
+  color: var(--berry);
+  font-weight: 500;
+}
+pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--code-text);
+  font-size: 13px;
+  font-weight: 400;
+}
+pre {
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 20px 24px;
+  border-radius: 4px;
+  overflow-x: auto;
+  margin: 16px 0 24px;
+  font-size: 13px;
+  line-height: 1.65;
+  position: relative;
+  border-left: 3px solid var(--leaf-bright);
+}
+pre::-webkit-scrollbar { height: 8px; }
+pre::-webkit-scrollbar-thumb { background: #3A3530; border-radius: 4px; }
+pre::-webkit-scrollbar-track { background: transparent; }
+
+blockquote {
+  margin: 24px 0;
+  padding: 20px 28px;
+  background: var(--paper);
+  border-left: 3px solid var(--gold);
+  font-size: 15px;
+  color: var(--ink-soft);
+  position: relative;
+}
+blockquote strong { color: var(--gold); }
+blockquote::before {
+  content: "✺";
+  position: absolute;
+  left: -14px;
+  top: 18px;
+  background: var(--bg);
+  color: var(--gold);
+  font-size: 14px;
+  width: 22px;
+  text-align: center;
+}
+
+/* ── Tables ─────────────────────────────────── */
+.table-wrap {
+  margin: 20px 0 28px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  overflow-x: auto;
+  background: var(--paper);
+}
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th {
+  font-family: 'Fraunces', serif;
+  font-weight: 500;
+  text-align: left;
+  padding: 14px 18px;
+  background: var(--bg-deeper);
+  border-bottom: 2px solid var(--line);
+  color: var(--ink);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+td {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--ink-soft);
+  vertical-align: top;
+}
+tr:last-child td { border-bottom: none; }
+td code { font-size: 12px; }
+.check { color: var(--leaf); font-weight: bold; }
+.cross { color: var(--ink-muted); }
+
+/* ── Phase Cards ────────────────────────────── */
+.phase-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin: 32px 0;
+}
+.phase {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: box-shadow 0.2s, transform 0.2s;
+  position: relative;
+}
+.phase:hover {
+  box-shadow: var(--shadow-lg);
+}
+.phase-head {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line-soft);
+}
+.phase-num {
+  font-family: 'Fraunces', serif;
+  font-size: 56px;
+  font-weight: 300;
+  font-style: italic;
+  color: var(--paper);
+  background: var(--leaf);
+  padding: 12px 28px;
+  display: flex;
+  align-items: center;
+  letter-spacing: -0.04em;
+  min-width: 110px;
+  justify-content: center;
+  position: relative;
+}
+.phase-num::after {
+  content: '';
+  position: absolute;
+  right: -1px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,0.3), transparent);
+}
+.phase:nth-child(odd) .phase-num { background: var(--leaf); }
+.phase:nth-child(even) .phase-num { background: var(--moss); }
+.phase:nth-child(3n) .phase-num { background: var(--gold); }
+.phase:nth-child(5n) .phase-num { background: var(--berry); }
+
+.phase-title {
+  flex: 1;
+  padding: 20px 28px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.phase-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--ink-muted);
+  margin-bottom: 4px;
+}
+.phase-name {
+  font-family: 'Fraunces', serif;
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.phase-body {
+  padding: 24px 28px 28px;
+}
+.phase-body h4:first-child { margin-top: 0; }
+
+.checklist {
+  list-style: none;
+  margin: 12px 0 16px;
+  padding: 0;
+}
+.checklist li {
+  padding-left: 28px;
+  position: relative;
+  margin-bottom: 8px;
+  font-size: 14.5px;
+  color: var(--ink-soft);
+}
+.checklist li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg);
+}
+
+.acceptance {
+  background: linear-gradient(180deg, var(--bg-deeper) 0%, transparent 100%);
+  border-left: 3px solid var(--leaf-bright);
+  padding: 14px 18px;
+  margin-top: 16px;
+  font-size: 14px;
+  border-radius: 0 3px 3px 0;
+}
+.acceptance-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--leaf);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.acceptance-body { color: var(--ink); font-size: 14px; }
+.acceptance-body code { font-size: 12.5px; }
+
+/* ── Pipeline diagram ───────────────────────── */
+.pipeline {
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: 24px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 24px 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* ── KPI strategy table (highlighted) ──────── */
+.strategy-table table th { background: var(--leaf); color: var(--paper); }
+
+/* ── Callout for required APIs ─────────────── */
+.api-row td { padding: 16px 18px; }
+.required {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--leaf);
+  color: var(--paper);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+.optional {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--line-soft);
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* ── Final note ────────────────────────────── */
+.final-note {
+  margin-top: 80px;
+  padding: 40px;
+  background: linear-gradient(135deg, var(--paper) 0%, var(--bg-deeper) 100%);
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.final-note h2 { border-top: none; margin-top: 0; padding-top: 0; }
+.final-note ol { counter-reset: rule; list-style: none; margin-left: 0; }
+.final-note ol li {
+  counter-increment: rule;
+  padding-left: 44px;
+  position: relative;
+  margin-bottom: 14px;
+  color: var(--ink);
+}
+.final-note ol li::before {
+  content: counter(rule, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 2px;
+  font-family: 'Fraunces', serif;
+  font-style: italic;
+  color: var(--leaf);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+
+/* ── Footer ────────────────────────────────── */
+footer {
+  margin-top: 80px;
+  padding-top: 32px;
+  border-top: 1px solid var(--line);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ── Mobile ────────────────────────────────── */
+.toc-toggle {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--leaf);
+  color: var(--paper);
+  border: none;
+  font-size: 22px;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+  z-index: 100;
+}
+@media (max-width: 1024px) {
+  .shell { grid-template-columns: 1fr; }
+  aside.toc {
+    position: fixed;
+    left: -300px;
+    top: 0;
+    z-index: 99;
+    height: 100vh;
+    width: 280px;
+    transition: left 0.25s;
+    box-shadow: var(--shadow-lg);
+  }
+  aside.toc.open { left: 0; }
+  main { padding: 32px 24px 80px; }
+  .toc-toggle { display: flex; align-items: center; justify-content: center; }
+  h1 { font-size: 36px; }
+  h2 { font-size: 26px; }
+  .hero-kpi { grid-template-columns: 1fr; }
+  .phase-head { flex-direction: column; }
+  .phase-num { min-width: auto; padding: 16px 28px; font-size: 36px; }
+}
+
+/* ── Print ─────────────────────────────────── */
+@media print {
+  aside.toc, .toc-toggle, footer { display: none; }
+  body { background: white; font-size: 11pt; }
+  .shell { grid-template-columns: 1fr; }
+  main { padding: 0; max-width: 100%; }
+  pre { font-size: 9pt; page-break-inside: avoid; }
+  .phase { page-break-inside: avoid; }
+  h2 { page-break-before: auto; page-break-after: avoid; }
+  .hero-kpi { grid-template-columns: repeat(3, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<button class="toc-toggle" onclick="document.querySelector('aside.toc').classList.toggle('open')">☰</button>
+
+<div class="shell">
+
+<!-- ═══════════ SIDEBAR TOC ═══════════ -->
+<aside class="toc">
+  <div class="toc-brand">Pikmin Coord Bot</div>
+  <div class="toc-brand-sub">Spec · v2 · Apr 2026</div>
+
+  <div class="toc-section">
+    <div class="toc-label">綱要</div>
+    <ul>
+      <li><a href="#sec1">§1 目標 & KPI</a></li>
+      <li><a href="#sec2">§2 識別率策略</a></li>
+      <li><a href="#sec3">§3 功能需求</a></li>
+      <li><a href="#sec4">§4 技術選型</a></li>
+      <li><a href="#sec5">§5 系統架構</a></li>
+      <li><a href="#sec6">§6 專案結構</a></li>
+    </ul>
+  </div>
+
+  <div class="toc-section">
+    <div class="toc-label">開發階段</div>
+    <ul>
+      <li><a href="#sec7" style="font-weight:600;color:var(--leaf)">§7 Phase 總覽</a></li>
+      <li><a href="#phase1" class="phase">P1 基礎建設</a></li>
+      <li><a href="#phase2" class="phase">P2 Vision 模組</a></li>
+      <li><a href="#phase3" class="phase">P3 Wikidata</a></li>
+      <li><a href="#phase4" class="phase">P4 Wikipedia</a></li>
+      <li><a href="#phase5" class="phase">P5 Nominatim</a></li>
+      <li><a href="#phase6" class="phase">P6 Photon</a></li>
+      <li><a href="#phase7" class="phase">P7 級聯解析</a></li>
+      <li><a href="#phase8" class="phase">P8 Formatter</a></li>
+      <li><a href="#phase9" class="phase">P9 Telegram Bot</a></li>
+      <li><a href="#phase10" class="phase">P10 入口</a></li>
+      <li><a href="#phase11" class="phase">P11 測試</a></li>
+      <li><a href="#phase12" class="phase">P12 部署</a></li>
+    </ul>
+  </div>
+
+  <div class="toc-section">
+    <div class="toc-label">附錄</div>
+    <ul>
+      <li><a href="#sec8">§8 API 範例</a></li>
+      <li><a href="#sec9">§9 環境變數</a></li>
+      <li><a href="#sec10">§10 Zeabur 部署</a></li>
+      <li><a href="#sec11">§11 測試案例</a></li>
+      <li><a href="#sec12">§12 後續擴充</a></li>
+      <li><a href="#sec13">§13 給 Claude Code</a></li>
+    </ul>
+  </div>
+</aside>
+
+<!-- ═══════════ MAIN CONTENT ═══════════ -->
+<main>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="hero-meta">
+    <span>開發規格書</span><span class="dot"></span>
+    <span class="v">v2</span><span class="dot"></span>
+    <span>2026 / 05</span><span class="dot"></span>
+    <span>For Claude Code</span>
+  </div>
+  <h1>Pikmin Bloom <em>菇點座標</em><br>識別 Bot</h1>
+  <p class="hero-sub">
+    使用者透過 Telegram 傳送 Pikmin Bloom 遊戲的菇點截圖,Bot 自動辨識真實世界地標並回傳 GPS 座標 + Google Maps 連結 + Telegram 原生互動式地圖。本文件是給 Claude Code 的完整實作規格,請依 Phase 順序開發。
+  </p>
+
+  <div class="hero-kpi">
+    <div class="kpi-cell">
+      <div class="kpi-label">識別成功率</div>
+      <div class="kpi-value">≥ 90<small>%</small></div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">月成本</div>
+      <div class="kpi-value">&lt; $1<small>USD</small></div>
+    </div>
+    <div class="kpi-cell">
+      <div class="kpi-label">必填 ENV VAR</div>
+      <div class="kpi-value">3<small>個</small></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ── §1 目標 ── -->
+<h2 id="sec1"><span class="num">SECTION 01</span>專案目標與 KPI</h2>
+<p>開發一個 Telegram Bot,讓玩家不必手動 Google 地名,直接傳截圖就能拿到精確 GPS 座標。</p>
+
+<h4>首要 KPI</h4>
+<p><strong>識別成功率 ≥ 90%</strong>(對於可被 Wikipedia 收錄的地標)。這是本版規格的最高優先級,所有架構決策都圍繞它展開。</p>
+
+<h4>次要目標</h4>
+<ul>
+  <li>月成本 &lt; USD $1(假設 500 張圖/月)</li>
+  <li>單次回應時間 &lt; 12 秒(從收圖到回傳座標)</li>
+  <li>三個必填 env var,皆免費取得,無需信用卡</li>
+  <li>部署於 Zeabur,Long-polling 模式不需 webhook</li>
+</ul>
+
+
+<!-- ── §2 識別率策略 ── -->
+<h2 id="sec2"><span class="num">SECTION 02</span>識別率優化策略<em style="color:var(--ink-muted);font-style:normal;font-size:14px;font-family:monospace;font-weight:400;letter-spacing:0.1em;text-transform:uppercase">  ✦ 本版核心</em></h2>
+<p>過去單一 LLM + 單一 geocoder 的設計常在以下五個關卡崩盤,本版用對應策略一一破解:</p>
+
+<div class="table-wrap strategy-table">
+<table>
+<thead><tr><th style="width:40%">弱點</th><th>本版對策</th></tr></thead>
+<tbody>
+<tr><td>LLM OCR 誤讀(如 <code>Jangtsa</code> 讀成 <code>Jangtso</code>)</td><td>LLM 一次回 <strong>1~3 個候選名</strong>,逐一嘗試</td></tr>
+<tr><td>單一 geocoder 對冷門地標漏接</td><td><strong>4 層級聯</strong>:Wikidata → Wikipedia → Nominatim → Photon</td></tr>
+<tr><td>Geocoder 對拼寫敏感</td><td>用候選名 × 原文(中/日/藏)交叉查詢</td></tr>
+<tr><td>LLM 不熟 Pikmin Bloom UI 版位</td><td>Prompt 內明確說明 UI 版位 + 兩個 few-shot 範例</td></tr>
+<tr><td>知名地標被 geocoder 誤抓同名地點</td><td>優先 Wikidata,語意 ID(如 Q3162338)永不混淆</td></tr>
+</tbody>
+</table>
+</div>
+
+<blockquote>
+  <strong>為什麼 Wikidata 是 Game Changer:</strong>它對每個地標儲存 <code>P625</code> 座標屬性,精確且權威;支援多語搜尋(藏文 / 日文 / 中文 / 韓文都能搜);完全免費、無 key、無流量限制;對於 Pikmin Bloom 主打的觀光地標,覆蓋率極高(估 &gt;85%)。
+</blockquote>
+
+
+<!-- ── §3 功能需求 ── -->
+<h2 id="sec3"><span class="num">SECTION 03</span>功能需求</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th style="width:60px">ID</th><th>描述</th><th style="width:90px">優先度</th></tr></thead>
+<tbody>
+<tr><td><code>F1</code></td><td>接收 Telegram 圖片(單張)</td><td><span class="required">P0</span></td></tr>
+<tr><td><code>F2</code></td><td>LLM Vision 多候選地標識別</td><td><span class="required">P0</span></td></tr>
+<tr><td><code>F3</code></td><td>Wikidata / Wikipedia / Nominatim / Photon 級聯解析</td><td><span class="required">P0</span></td></tr>
+<tr><td><code>F4</code></td><td>回傳座標純文字 + Google Maps URL</td><td><span class="required">P0</span></td></tr>
+<tr><td><code>F5</code></td><td>Telegram 原生 <code>sendLocation</code>(互動式地圖)</td><td><span class="required">P0</span></td></tr>
+<tr><td><code>F6</code></td><td>完整錯誤處理(LLM 失敗、解析失敗、未知圖片)</td><td><span class="optional">P1</span></td></tr>
+<tr><td><code>F7</code></td><td><code>/start</code>、<code>/help</code> 指令</td><td><span class="optional">P1</span></td></tr>
+<tr><td><code>F8</code></td><td>結構化日誌記錄識別過程</td><td><span class="optional">P2</span></td></tr>
+</tbody>
+</table>
+</div>
+
+
+<!-- ── §4 技術選型 ── -->
+<h2 id="sec4"><span class="num">SECTION 04</span>技術選型</h2>
+
+<h3>4.1 LLM:Gemini 2.5 Flash</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>模型</th><th>輸入價(per 1M token)</th><th>圖片價</th><th>判斷</th></tr></thead>
+<tbody>
+<tr><td><strong>Gemini 2.5 Flash ✅</strong></td><td>~$0.075</td><td>~$0.0003/圖</td><td>最便宜 + Vision 能力夠</td></tr>
+<tr><td>Gemini 2.0 Flash</td><td>~$0.10</td><td>略高</td><td>備援</td></tr>
+<tr><td>Claude Haiku 4.5</td><td>~$1.00</td><td>高 10×</td><td>太貴</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4.2 全部 API(僅 2 個需 key,其餘完全免費)</h3>
+<div class="table-wrap">
+<table>
+<thead><tr><th>API</th><th>用途</th><th>是否需 key</th><th>限制</th></tr></thead>
+<tbody>
+<tr class="api-row"><td><strong>Telegram Bot API</strong></td><td>收發訊息</td><td><span class="required">需要 ✅</span> @BotFather 免費</td><td>寬鬆</td></tr>
+<tr class="api-row"><td><strong>Gemini API</strong></td><td>Vision 識別</td><td><span class="required">需要 ✅</span> AI Studio 免費</td><td>1500 RPD 免費</td></tr>
+<tr class="api-row"><td><strong>Wikidata API</strong></td><td>主要 geocoder</td><td><span class="optional">無</span></td><td>寬鬆</td></tr>
+<tr class="api-row"><td><strong>Wikipedia API</strong></td><td>第二 geocoder</td><td><span class="optional">無</span></td><td>寬鬆</td></tr>
+<tr class="api-row"><td><strong>Nominatim</strong></td><td>第三 geocoder(OSM)</td><td><span class="optional">無</span> 需 User-Agent</td><td>1 req/sec</td></tr>
+<tr class="api-row"><td><strong>Photon</strong></td><td>第四 geocoder(OSM)</td><td><span class="optional">無</span></td><td>寬鬆</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>4.3 Python 套件</h3>
+<pre><code class="language-text">python-telegram-bot>=21.6
+google-generativeai>=0.8.0
+httpx>=0.27.0
+python-dotenv>=1.0.1
+pydantic>=2.0
+pydantic-settings>=2.0</code></pre>
+
+
+<!-- ── §5 系統架構 ── -->
+<h2 id="sec5"><span class="num">SECTION 05</span>系統架構</h2>
+
+<div class="pipeline">┌──────────┐  photo  ┌───────────┐  base64  ┌──────────────┐
+│ Telegram │ ──────► │ Bot       │ ───────► │ Gemini Flash │
+│ User     │         │ (Zeabur)  │          │ (multi-cand) │
+└──────────┘         └─────┬─────┘          └──────┬───────┘
+     ▲                     │  candidates[]         │
+     │ msg + map           ▼                       │
+     │           ┌─────────────────────┐           │
+     │           │ Resolver (Cascade)  │           │
+     │           │                     │           │
+     │           │ ① Wikidata API ─────┼──► coords?
+     │           │     ↓ (miss)        │           │
+     │           │ ② Wikipedia API ────┼──► coords?
+     │           │     ↓ (miss)        │           │
+     │           │ ③ Nominatim ────────┼──► coords?
+     │           │     ↓ (miss)        │           │
+     │           │ ④ Photon ───────────┼──► coords?
+     │           └─────────────────────┘           │
+     │                     │                       │
+     └─────────────────────┘                       │
+        formatted reply</div>
+
+<h4>處理流程</h4>
+<ol>
+  <li>使用者傳圖 → Bot 立刻 reply「🔍 識別中…」</li>
+  <li>Gemini Vision 識別 → 拿到 N 個候選名 + 國家/地區</li>
+  <li>解析器級聯:對每個候選依序試 4 個來源,任一命中立即短路</li>
+  <li>編輯訊息為:座標 + Google Maps URL</li>
+  <li>額外發送 <code>sendLocation</code> 原生地圖訊息</li>
+</ol>
+
+
+<!-- ── §6 專案結構 ── -->
+<h2 id="sec6"><span class="num">SECTION 06</span>專案結構</h2>
+<pre><code class="language-text">pikmin-coord-bot/
+├── src/
+│   ├── __init__.py
+│   ├── main.py              # 入口
+│   ├── bot.py               # Telegram handlers
+│   ├── vision.py            # Gemini 多候選識別
+│   ├── resolver.py          # 級聯解析
+│   ├── providers/           # 4 個解析來源
+│   │   ├── __init__.py
+│   │   ├── base.py          # GeocoderProvider 抽象介面
+│   │   ├── wikidata.py
+│   │   ├── wikipedia.py
+│   │   ├── nominatim.py
+│   │   └── photon.py
+│   ├── formatter.py         # 訊息格式化
+│   ├── config.py            # env vars
+│   ├── models.py            # PlaceCandidates、Coords dataclass
+│   └── logger.py
+├── tests/
+│   ├── test_vision.py
+│   ├── test_resolver.py
+│   ├── test_providers/
+│   │   └── ...
+│   └── fixtures/jangtsa.jpg
+├── requirements.txt
+├── Procfile
+├── zeabur.json
+├── .env.example
+├── .gitignore
+└── README.md</code></pre>
+
+
+<!-- ── §7 開發階段 (Phase Cards) ── -->
+<h2 id="sec7"><span class="num">SECTION 07</span>開發階段(共 12 個 Phase)</h2>
+<p>每個 Phase 都有<strong>明確的任務清單</strong>與<strong>驗收條件</strong>。Claude Code 必須跑過驗收條件後才能進入下一階段。</p>
+
+<div class="phase-grid">
+
+<!-- ── Phase 1 ── -->
+<article class="phase" id="phase1">
+  <header class="phase-head">
+    <div class="phase-num">01</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE ONE · FOUNDATION</div>
+      <div class="phase-name">基礎建設</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>任務清單</h4>
+    <ul class="checklist">
+      <li>建立 §6 的目錄結構</li>
+      <li>寫 <code>requirements.txt</code>(版本依 §4.3)</li>
+      <li>寫 <code>.gitignore</code>(<code>.env</code>、<code>__pycache__/</code>、<code>*.pyc</code>、<code>.venv/</code>、<code>*.log</code>)</li>
+      <li>寫 <code>.env.example</code>(內容依 §9)</li>
+      <li>寫 <code>src/config.py</code>:用 <code>pydantic-settings</code> 讀 env,啟動時驗證 3 個必填變數</li>
+      <li>寫 <code>src/logger.py</code>:結構化日誌,等級依 <code>LOG_LEVEL</code></li>
+      <li>寫 <code>src/models.py</code>:定義 <code>PlaceCandidates</code> 與 <code>Coords</code> dataclass(見下方)</li>
+    </ul>
+
+    <h4><code>src/models.py</code> 內容</h4>
+<pre><code class="language-python">from dataclasses import dataclass, field
+from typing import Optional
+
+@dataclass
+class PlaceCandidates:
+    """Vision 識別結果"""
+    candidates: list[str]                    # 1~3 個英文候選名
+    place_name_local: Optional[str] = None   # 原文(藏/日/中)
+    country: str = ""
+    region: str = ""
+    description: str = ""
+    search_hints: list[str] = field(default_factory=list)
+    confidence: str = "low"                  # high|medium|low
+
+@dataclass
+class Coords:
+    lat: float
+    lng: float
+    source: str                  # "wikidata"|"wikipedia"|"nominatim"|"photon"
+    matched_query: str           # 實際命中的查詢字串
+    canonical_name: Optional[str] = None</code></pre>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body"><code>python -c "from src.config import settings; from src.models import *"</code> 無錯誤輸出。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 2 ── -->
+<article class="phase" id="phase2">
+  <header class="phase-head">
+    <div class="phase-num">02</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE TWO · VISION</div>
+      <div class="phase-name">Gemini Vision 多候選識別</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>函式簽章</h4>
+<pre><code class="language-python">async def identify_place(image_bytes: bytes) -> PlaceCandidates:
+    """
+    回傳候選名陣列。完全無法識別時回 candidates=[]。
+    LLM 呼叫失敗或 JSON 解析失敗拋 VisionError。
+    """
+
+class VisionError(Exception): ...</code></pre>
+
+    <h4>實作要點</h4>
+    <ul>
+      <li>使用 <code>genai.GenerativeModel("gemini-2.5-flash", ...)</code></li>
+      <li>設定 <code>response_mime_type="application/json"</code> 強制 JSON 輸出</li>
+      <li>設定 <code>temperature=0.1</code> 提高一致性</li>
+      <li>用 <code>generate_content_async</code></li>
+      <li>JSON parse 失敗拋 <code>VisionError</code></li>
+      <li>候選清單 case-insensitive 去重</li>
+    </ul>
+
+    <h4>Prompt(模組常數,完整版)</h4>
+<pre><code class="language-text">You are an expert at identifying real-world landmarks from Pikmin Bloom mushroom point screenshots.
+
+ABOUT THE GAME UI:
+Pikmin Bloom mushroom screenshots have this layout:
+- TOP: Photo of the real-world landmark
+- MIDDLE: Landmark name shown as a TITLE (often in multiple scripts)
+- BELOW TITLE: A short English description
+- "距離" or "Distance": followed by meters — IGNORE THIS
+- BOTTOM: 3D mushroom decorations — IGNORE THESE
+
+Your job: identify the landmark from the TITLE and photo. Generate
+MULTIPLE candidate names because OCR may produce minor errors.
+
+OUTPUT (valid JSON only, no markdown, no code fence):
+{
+  "candidates": [
+    "Primary English/official name",
+    "Alternative spelling or common name",
+    "Transliteration variant if applicable"
+  ],
+  "place_name_local": "Name in original script if visible, else null",
+  "country": "Country name in English",
+  "region": "City or province in English",
+  "description": "One sentence factual description",
+  "search_hints": ["extra keyword 1", "extra keyword 2"],
+  "confidence": "high" | "medium" | "low"
+}
+
+EXAMPLE 1 — Bhutan Stupa Temple:
+{
+  "candidates": ["Jangtsa Dumtseg Lhakhang", "Dumtseg Lhakhang", "Dungtse Lhakhang"],
+  "place_name_local": "ཛྩུ་མ་བར་",
+  "country": "Bhutan",
+  "region": "Paro",
+  "description": "The only temple in Bhutan in the form of a stupa",
+  "search_hints": ["Paro chorten", "Thangtong Gyalpo temple"],
+  "confidence": "high"
+}
+
+EXAMPLE 2 — Tokyo Tower:
+{
+  "candidates": ["Tokyo Tower", "東京タワー"],
+  "place_name_local": "東京タワー",
+  "country": "Japan",
+  "region": "Tokyo",
+  "description": "Communications and observation tower in Minato, Tokyo",
+  "search_hints": ["Minato tower Japan"],
+  "confidence": "high"
+}
+
+If unable to identify: {"candidates": [], "error": "explanation"}
+
+CRITICAL:
+- Generate 1-3 candidates, prefer English Wikipedia title format
+- Distance text "距離: 3,207,181m" is NEVER the name
+- Always include local-script name if visible
+- Mark "low" only when truly uncertain</code></pre>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">對 <code>fixtures/jangtsa.jpg</code> 識別,<code>candidates[0]</code> 必須包含「Jangtsa」與「Dumtseg」字串。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 3 ── -->
+<article class="phase" id="phase3">
+  <header class="phase-head">
+    <div class="phase-num">03</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE THREE · PROVIDER #1</div>
+      <div class="phase-name">Wikidata Provider</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>抽象介面 <code>src/providers/base.py</code></h4>
+<pre><code class="language-python">from abc import ABC, abstractmethod
+from typing import Optional
+from src.models import Coords
+
+class GeocoderProvider(ABC):
+    name: str  # "wikidata" 等
+
+    @abstractmethod
+    async def lookup(
+        self, query: str, hint_country: str = ""
+    ) -> Optional[Coords]:
+        """單次查詢。找不到回 None,網路錯誤拋 ProviderError。"""
+
+class ProviderError(Exception): ...</code></pre>
+
+    <h4>Wikidata 三步驟邏輯</h4>
+    <ol>
+      <li><strong>Search</strong> — 用 <code>wbsearchentities</code> action 拿 Q-id 候選清單(limit=5)</li>
+      <li><strong>Filter</strong> — 篩選 description 含地理關鍵字(temple, tower, mountain, lake, museum, station, palace, monument, park, building, church, mosque, shrine, castle, bridge)的條目;用 <code>hint_country</code> 進一步過濾</li>
+      <li><strong>Get entity</strong> — 對首筆 Q-id 抓 entity JSON,解 <code>P625</code> 取座標</li>
+    </ol>
+
+    <h4>API 範例</h4>
+<pre><code class="language-bash"># Step 1: Search
+GET https://www.wikidata.org/w/api.php
+    ?action=wbsearchentities
+    &amp;search={query}
+    &amp;language=en
+    &amp;format=json
+    &amp;type=item
+    &amp;limit=5
+
+# Step 3: Get entity & coordinates
+GET https://www.wikidata.org/wiki/Special:EntityData/{Q-id}.json
+# Parse: entities.{Q-id}.claims.P625[0].mainsnak.datavalue.value
+# Returns: { "latitude": ..., "longitude": ... }</code></pre>
+
+    <h4>注意事項</h4>
+    <ul>
+      <li>沒 P625(座標屬性)的 entity 視為 miss</li>
+      <li>HTTP timeout 設 8 秒</li>
+      <li>User-Agent 必設:<code>PikminCoordBot/1.0 ({CONTACT_EMAIL})</code></li>
+      <li>回傳 <code>Coords(source="wikidata", canonical_name=label)</code></li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body"><code>await wikidata.lookup("Jangtsa Dumtseg Lhakhang", "Bhutan")</code> 回傳座標約 <code>(27.435, 89.413)</code>,誤差 &lt; 0.01 度。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 4 ── -->
+<article class="phase" id="phase4">
+  <header class="phase-head">
+    <div class="phase-num">04</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE FOUR · PROVIDER #2</div>
+      <div class="phase-name">Wikipedia Provider</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>兩步驟邏輯</h4>
+<pre><code class="language-bash"># Step 1: Search 拿頁面標題
+GET https://en.wikipedia.org/w/api.php
+    ?action=opensearch
+    &amp;search={query}
+    &amp;limit=3
+    &amp;format=json
+
+# Step 2: Get coordinates
+GET https://en.wikipedia.org/w/api.php
+    ?action=query
+    &amp;prop=coordinates
+    &amp;titles={page_title}
+    &amp;format=json
+# Parse: query.pages.*.coordinates[0].{lat, lon}</code></pre>
+
+    <h4>注意事項</h4>
+    <ul>
+      <li>沒 coordinates 視為 miss(回 <code>None</code>)</li>
+      <li>頁面標題需 URL-encode</li>
+      <li>同樣設 User-Agent 與 timeout</li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">對 <code>"Tokyo Tower"</code> 回傳座標約 <code>(35.6586, 139.7454)</code>,誤差 &lt; 0.01 度。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 5 ── -->
+<article class="phase" id="phase5">
+  <header class="phase-head">
+    <div class="phase-num">05</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE FIVE · PROVIDER #3</div>
+      <div class="phase-name">Nominatim Provider(OSM)</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>API</h4>
+<pre><code class="language-bash">GET https://nominatim.openstreetmap.org/search
+    ?q={query}
+    &amp;format=json
+    &amp;limit=1
+    &amp;addressdetails=0</code></pre>
+
+    <h4>實作要點</h4>
+    <ul>
+      <li><strong>必設</strong> User-Agent:<code>PikminCoordBot/1.0 ({CONTACT_EMAIL})</code> — 沒設會被擋</li>
+      <li>速率限制 1 req/sec → 用 module-level <code>asyncio.Lock</code> + 每次呼叫前 <code>await asyncio.sleep(1)</code></li>
+      <li>解析 <code>[0].{lat, lon}</code>,值是字串,要 <code>float()</code> 轉換</li>
+      <li>陣列為空回 <code>None</code></li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">對 <code>"Eiffel Tower, Paris"</code> 回傳座標約 <code>(48.858, 2.294)</code>,且兩次連續呼叫間隔 &gt; 1 秒。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 6 ── -->
+<article class="phase" id="phase6">
+  <header class="phase-head">
+    <div class="phase-num">06</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE SIX · PROVIDER #4</div>
+      <div class="phase-name">Photon Provider(備援)</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>API</h4>
+<pre><code class="language-bash">GET https://photon.komoot.io/api
+    ?q={query}
+    &amp;limit=1
+    &amp;lang=en</code></pre>
+
+    <h4>關鍵注意</h4>
+    <blockquote>
+      <strong>座標順序陷阱:</strong>Photon 回傳 GeoJSON,<code>features[0].geometry.coordinates</code> 是 <code>[lng, lat]</code> 順序,跟一般「lat, lng」相反!不要搞錯。
+    </blockquote>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">對 <code>"Sydney Opera House"</code> 回傳合理座標(緯度負值,在 -34 附近)。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 7 ── -->
+<article class="phase" id="phase7">
+  <header class="phase-head">
+    <div class="phase-num">07</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE SEVEN · CASCADE</div>
+      <div class="phase-name">級聯解析器(核心)</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>主函式 <code>src/resolver.py</code></h4>
+<pre><code class="language-python">async def resolve(place: PlaceCandidates) -> Optional[Coords]:
+    """
+    對每個 candidate × 每個 provider 級聯查詢。
+    任一命中立即短路。全失敗回 None。
+    """</code></pre>
+
+    <h4>級聯邏輯(行優先:同一 query 先試 4 個 provider)</h4>
+<pre><code class="language-python">queries = build_queries(place)
+providers = [Wikidata(), Wikipedia(), Nominatim(), Photon()]
+
+for q in queries:
+    for p in providers:
+        try:
+            result = await p.lookup(q, place.country)
+            if result:
+                logger.info("hit", query=q, provider=p.name)
+                return result
+        except ProviderError as e:
+            logger.warning("provider error", provider=p.name, error=str(e))
+            continue
+return None</code></pre>
+
+    <h4>查詢字串生成順序<code>build_queries(place)</code></h4>
+    <ol>
+      <li><code>f"{candidates[0]}, {region}, {country}"</code></li>
+      <li><code>f"{candidates[0]}, {country}"</code></li>
+      <li><code>f"{candidates[1]}, {country}"</code> — 若有第二候選</li>
+      <li><code>f"{candidates[2]}, {country}"</code> — 若有第三候選</li>
+      <li><code>f"{place_name_local}, {country}"</code> — 若有原文</li>
+      <li><code>f"{candidates[0]}"</code> — 純名字</li>
+      <li><code>f"{search_hints[0]}, {country}"</code> — 若有提示</li>
+    </ol>
+    <p style="font-size:14px;color:var(--ink-muted)">⚠ 去重後再執行,避免重複查詢浪費請求。</p>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">對 <code>PlaceCandidates(candidates=["Jangtsa Dumtseg Lhakhang"], country="Bhutan", region="Paro")</code> 必須回傳座標,且 <code>source == "wikidata"</code>。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 8 ── -->
+<article class="phase" id="phase8">
+  <header class="phase-head">
+    <div class="phase-num">08</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE EIGHT · FORMATTER</div>
+      <div class="phase-name">訊息格式化</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>函式 <code>src/formatter.py</code></h4>
+<pre><code class="language-python">def format_success(place: PlaceCandidates, coords: Coords) -> str: ...
+def format_no_coords(place: PlaceCandidates) -> str: ...
+def format_unknown() -> str: ...
+
+def google_maps_url(lat: float, lng: float) -> str:
+    return f"https://www.google.com/maps?q={lat},{lng}"</code></pre>
+
+    <h4>成功訊息範本(Markdown)</h4>
+<pre><code class="language-text">📍 *Jangtsa Dumtseg Lhakhang*
+🌏 Bhutan · Paro
+
+🎯 座標:`27.435125, 89.413636`
+🗺️ [Google Maps](https://www.google.com/maps?q=27.435125,89.413636)
+
+📝 The only temple in Bhutan in the form of a stupa
+_資料來源:wikidata · 信心度:high_</code></pre>
+
+    <h4>注意</h4>
+    <ul>
+      <li>用 <code>parse_mode="Markdown"</code>(不是 V2),避開特殊字元跳脫</li>
+      <li>傳訊息時加 <code>disable_web_page_preview=True</code> 防止連結預覽撐高訊息</li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">把測試輸入丟進 <code>format_success()</code>,輸出能被 Telegram Bot API 接受(無 parse error)。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 9 ── -->
+<article class="phase" id="phase9">
+  <header class="phase-head">
+    <div class="phase-num">09</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE NINE · BOT</div>
+      <div class="phase-name">Telegram Bot 主邏輯</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>Handlers <code>src/bot.py</code></h4>
+<pre><code class="language-python">async def cmd_start(update, context): ...
+async def handle_photo(update, context): ...
+async def handle_non_photo(update, context): ...</code></pre>
+
+    <h4><code>handle_photo</code> 完整流程</h4>
+<pre><code class="language-python">async def handle_photo(update, context):
+    chat_id = update.effective_chat.id
+    status = await update.message.reply_text("🔍 識別中…")
+
+    try:
+        photo = update.message.photo[-1]
+        file = await photo.get_file()
+        bio = BytesIO()
+        await file.download_to_memory(bio)
+
+        place = await identify_place(bio.getvalue())
+        if not place.candidates:
+            await status.edit_text(format_unknown())
+            return
+
+        await status.edit_text(
+            f"🔎 識別到「{place.candidates[0]}」,查詢座標中…"
+        )
+
+        coords = await resolve(place)
+        if not coords:
+            await status.edit_text(
+                format_no_coords(place), parse_mode="Markdown"
+            )
+            return
+
+        await status.edit_text(
+            format_success(place, coords),
+            parse_mode="Markdown",
+            disable_web_page_preview=True,
+        )
+        await context.bot.send_location(
+            chat_id=chat_id,
+            latitude=coords.lat,
+            longitude=coords.lng,
+        )
+    except Exception:
+        log.exception(
+            "handle_photo failed",
+            user_id=update.effective_user.id,
+        )
+        await status.edit_text("⚠️ 處理失敗,請稍後重試")</code></pre>
+
+    <h4>UX 細節</h4>
+    <ul>
+      <li><strong>必須</strong>用 <code>edit_message_text</code> 更新「識別中」訊息,不要每步都發新訊息</li>
+      <li>處理過程超過 5 秒可加 <code>send_chat_action(chat_id, "typing")</code></li>
+      <li><code>send_location</code> 要在文字訊息之後送(順序:文字 → 地圖)</li>
+      <li>任何 exception 都不洩露內容給使用者,只記錄到 log</li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">本機 Polling 啟動 → Telegram 傳菇點截圖 → 收到三段訊息(識別中 → 查詢中 → 結果)+ 一張原生地圖。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 10 ── -->
+<article class="phase" id="phase10">
+  <header class="phase-head">
+    <div class="phase-num">10</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE TEN · ENTRY</div>
+      <div class="phase-name">入口程式</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4><code>src/main.py</code></h4>
+<pre><code class="language-python">from telegram.ext import (
+    Application, CommandHandler, MessageHandler, filters,
+)
+from src.config import settings
+from src.bot import cmd_start, handle_photo, handle_non_photo
+from src.logger import get_logger
+
+log = get_logger(__name__)
+
+def main():
+    log.info("Bot starting", model=settings.LLM_MODEL)
+    app = Application.builder().token(settings.TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler(["start", "help"], cmd_start))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(
+        filters.ALL & ~filters.COMMAND, handle_non_photo
+    ))
+    app.run_polling(allowed_updates=["message"])
+
+if __name__ == "__main__":
+    main()</code></pre>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body"><code>python -m src.main</code> 啟動,log 顯示 <code>Bot starting</code>,在 Telegram 傳 <code>/start</code> 收到歡迎訊息。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 11 ── -->
+<article class="phase" id="phase11">
+  <header class="phase-head">
+    <div class="phase-num">11</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE ELEVEN · TESTS</div>
+      <div class="phase-name">單元測試</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4>每個 Provider 測試項目</h4>
+    <ul>
+      <li>知名地標回傳合理座標(誤差 &lt; 1 km)</li>
+      <li>不存在地名回 <code>None</code></li>
+      <li>用 mock httpx 測試異常處理(網路錯、timeout、5xx)</li>
+    </ul>
+
+    <h4><code>tests/test_resolver.py</code> 測級聯邏輯</h4>
+    <ul>
+      <li>第一個 provider 命中 → 後續不被呼叫(用 mock 驗證)</li>
+      <li>全部 miss → 回 <code>None</code></li>
+      <li>中間 provider 拋 <code>ProviderError</code> → 繼續下一個,不中斷</li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body"><code>pytest tests/ -v</code> 全綠通過,coverage &gt; 80%。</div>
+    </div>
+  </div>
+</article>
+
+
+<!-- ── Phase 12 ── -->
+<article class="phase" id="phase12">
+  <header class="phase-head">
+    <div class="phase-num">12</div>
+    <div class="phase-title">
+      <div class="phase-tag">PHASE TWELVE · DEPLOY</div>
+      <div class="phase-name">Zeabur 部署設定</div>
+    </div>
+  </header>
+  <div class="phase-body">
+    <h4><code>Procfile</code></h4>
+<pre><code class="language-text">worker: python -m src.main</code></pre>
+
+    <h4><code>zeabur.json</code>(可選)</h4>
+<pre><code class="language-json">{
+  "name": "pikmin-coord-bot",
+  "build": { "buildCommand": "pip install -r requirements.txt" },
+  "start": { "startCommand": "python -m src.main" }
+}</code></pre>
+
+    <h4><code>README.md</code> 必含章節</h4>
+    <ul>
+      <li>專案介紹(一段話)</li>
+      <li>快速開始(本機跑起來的 5 步驟)</li>
+      <li>Zeabur 部署(連結到 §10)</li>
+      <li>識別率測試結果(可留待實際跑過後填)</li>
+    </ul>
+
+    <div class="acceptance">
+      <div class="acceptance-label">✓ 驗收條件</div>
+      <div class="acceptance-body">部署到 Zeabur 成功,日誌顯示 <code>Bot starting</code>,Telegram 端傳菇點圖能在 12 秒內收到結果。</div>
+    </div>
+  </div>
+</article>
+
+</div>
+
+
+<!-- ── §8 詳細 API ── -->
+<h2 id="sec8"><span class="num">SECTION 08</span>詳細 API 範例</h2>
+
+<h3>8.1 Wikidata Search</h3>
+<pre><code class="language-bash">curl 'https://www.wikidata.org/w/api.php?action=wbsearchentities&search=Jangtsa+Dumtseg+Lhakhang&language=en&format=json&type=item&limit=5'
+
+# 預期回傳含 Q3162338 (Dumtseg Lhakhang)</code></pre>
+
+<h3>8.2 Wikidata Entity → 取座標</h3>
+<pre><code class="language-bash">curl 'https://www.wikidata.org/wiki/Special:EntityData/Q3162338.json' \
+  | jq '.entities.Q3162338.claims.P625[0].mainsnak.datavalue.value'
+
+# 預期: { "latitude": 27.4351..., "longitude": 89.4136..., ... }</code></pre>
+
+<h3>8.3 Photon</h3>
+<pre><code class="language-bash">curl 'https://photon.komoot.io/api?q=Tokyo+Tower&limit=1'
+
+# 注意 coordinates: [lng, lat] 順序!</code></pre>
+
+
+<!-- ── §9 環境變數 ── -->
+<h2 id="sec9"><span class="num">SECTION 09</span>環境變數(Zeabur 設定)</h2>
+<p><strong>只有 3 個必填,全部免費取得</strong>。</p>
+
+<div class="table-wrap">
+<table>
+<thead><tr><th>變數</th><th>必填</th><th>範例</th><th>取得方式</th></tr></thead>
+<tbody>
+<tr><td><code>TELEGRAM_TOKEN</code></td><td><span class="required">必填</span></td><td><code>7891234567:AAH...</code></td><td>Telegram 找 <a href="https://t.me/BotFather">@BotFather</a> → <code>/newbot</code></td></tr>
+<tr><td><code>GEMINI_API_KEY</code></td><td><span class="required">必填</span></td><td><code>AIzaSyB...</code></td><td><a href="https://aistudio.google.com/app/apikey">Google AI Studio</a> → Create API Key</td></tr>
+<tr><td><code>CONTACT_EMAIL</code></td><td><span class="required">必填</span></td><td><code>you@example.com</code></td><td>你的信箱(Nominatim 要求)</td></tr>
+<tr><td><code>LOG_LEVEL</code></td><td><span class="optional">選用</span></td><td><code>INFO</code></td><td>預設 <code>INFO</code></td></tr>
+<tr><td><code>LLM_MODEL</code></td><td><span class="optional">選用</span></td><td><code>gemini-2.5-flash</code></td><td>預設值,可改 <code>gemini-2.0-flash</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h4><code>.env.example</code></h4>
+<pre><code class="language-bash"># === 必填(全免費) ===
+TELEGRAM_TOKEN=your_telegram_bot_token_from_botfather
+GEMINI_API_KEY=your_gemini_api_key_from_ai_studio
+CONTACT_EMAIL=your_email@example.com
+
+# === 選用 ===
+LOG_LEVEL=INFO
+LLM_MODEL=gemini-2.5-flash</code></pre>
+
+
+<!-- ── §10 Zeabur 部署步驟 ── -->
+<h2 id="sec10"><span class="num">SECTION 10</span>Zeabur 部署步驟</h2>
+<ol>
+  <li>
+    <strong>GitHub 上傳</strong>
+<pre><code class="language-bash">git init && git add . && git commit -m "feat: initial bot"
+git remote add origin https://github.com/YOUR_USER/pikmin-coord-bot.git
+git push -u origin main</code></pre>
+  </li>
+  <li>登入 <a href="https://zeabur.com">zeabur.com</a> → Create Project</li>
+  <li><strong>Add Service</strong> → GitHub → 選 repo</li>
+  <li>Zeabur 自動偵測 Python,讀 <code>Procfile</code> 啟動</li>
+  <li><strong>Variables 頁籤</strong>逐一加入 §9 的 3 個必填變數</li>
+  <li>Deploy,等 build log 出現 <code>Bot starting</code></li>
+  <li>
+    <strong>驗證</strong>:
+    <ul>
+      <li>Telegram 找你的 Bot 傳 <code>/start</code> → 收到歡迎訊息</li>
+      <li>傳菇點截圖 → 12 秒內收到座標訊息 + 原生地圖</li>
+    </ul>
+  </li>
+</ol>
+
+<blockquote>
+  <strong>重要:</strong>不需要 webhook(用 polling)。不需要對外 port。Service Plan 必須是<strong>長駐型</strong>,不能用 Serverless,否則 polling 會中斷。
+</blockquote>
+
+
+<!-- ── §11 測試案例 ── -->
+<h2 id="sec11"><span class="num">SECTION 11</span>手動驗收測試案例</h2>
+<div class="table-wrap">
+<table>
+<thead><tr><th>案例</th><th>輸入</th><th>預期結果</th><th>預期來源</th></tr></thead>
+<tbody>
+<tr><td><code>TC1</code></td><td><code>/start</code> 指令</td><td>歡迎訊息</td><td>—</td></tr>
+<tr><td><code>TC2</code></td><td>Jangtsa Dumtseg Lhakhang 截圖</td><td><code>(27.4351, 89.4136)</code> ±0.01</td><td>wikidata</td></tr>
+<tr><td><code>TC3</code></td><td>東京鐵塔截圖</td><td><code>(35.6586, 139.7454)</code> ±0.01</td><td>wikidata 或 wikipedia</td></tr>
+<tr><td><code>TC4</code></td><td>冷門 OSM 地點</td><td>合理座標</td><td>nominatim 或 photon</td></tr>
+<tr><td><code>TC5</code></td><td>純文字訊息</td><td>「請傳送圖片」</td><td>—</td></tr>
+<tr><td><code>TC6</code></td><td>純風景照無地標</td><td>「無法識別」</td><td>—</td></tr>
+<tr><td><code>TC7</code></td><td>4 層全 miss(極罕見)</td><td>顯示地名 + 提示自行搜尋</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>識別率驗證</h4>
+<p>準備 20 張不同國家的菇點截圖,完整跑過 → <strong>至少 18 張(≥90%)有正確座標</strong>。把結果填到 README.md 的「識別率測試結果」章節。</p>
+
+
+<!-- ── §12 後續擴充 ── -->
+<h2 id="sec12"><span class="num">SECTION 12</span>後續擴充(不在本次範圍)</h2>
+<ul>
+  <li>SQLite 快取(image hash → 結果),降低重複呼叫</li>
+  <li>群組模式 + 共用菇點資料庫</li>
+  <li>Inline mode <code>@yourbot</code> 直接搜尋</li>
+  <li>使用者「👍/👎」回饋按鈕,收集誤判樣本</li>
+  <li>支援多張圖一次傳(Telegram album)</li>
+  <li>把識別結果輸出 GPX/KML 路線檔(給其他遊戲用)</li>
+</ul>
+
+
+<!-- ── §13 給 Claude Code 的最後叮嚀 ── -->
+<div class="final-note">
+  <h2 id="sec13" style="margin-top:0!important;padding-top:0!important;border-top:none!important"><span class="num">SECTION 13</span>給 Claude Code 的最後叮嚀</h2>
+  <ol>
+    <li><strong>嚴格按 Phase 順序開發</strong>,每階段跑驗收條件再進下一步</li>
+    <li><strong>不要改函式簽章或環境變數名稱</strong>,本文件是唯一真實來源</li>
+    <li><strong>每個 async I/O 必須有 timeout</strong>(預設 8 秒,Gemini 30 秒)</li>
+    <li><strong>不要把 token / API key 印到 log</strong>,連 DEBUG 等級也不行</li>
+    <li><strong>provider 任一掛掉不應讓整體流程崩</strong>,務必 try/except 後 fallback</li>
+    <li><strong>commit 訊息用 Conventional Commits</strong>:<code>feat:</code> / <code>fix:</code> / <code>docs:</code> / <code>chore:</code></li>
+    <li>完成後在 README.md 寫「快速開始」與「識別率測試結果」兩節</li>
+  </ol>
+</div>
+
+<footer>
+  <span>Pikmin Coord Bot — Spec v2</span>
+  <span>For Claude Code · Last edit 2026-05-10</span>
+</footer>
+
+</main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>
+  hljs.highlightAll();
+
+  // Highlight active TOC link on scroll
+  const sections = document.querySelectorAll('h2[id], article.phase[id]');
+  const tocLinks = document.querySelectorAll('aside.toc a[href^="#"]');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.id;
+        tocLinks.forEach(link => {
+          link.style.color = '';
+          link.style.fontWeight = '';
+          if (link.getAttribute('href') === '#' + id) {
+            link.style.color = 'var(--leaf)';
+            link.style.fontWeight = '600';
+          }
+        });
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+
+  // Auto-close sidebar on mobile after click
+  tocLinks.forEach(link => {
+    link.addEventListener('click', () => {
+      if (window.innerWidth <= 1024) {
+        document.querySelector('aside.toc').classList.remove('open');
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
