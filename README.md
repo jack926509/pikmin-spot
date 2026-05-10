@@ -2,7 +2,7 @@
 
 Telegram Bot:傳 Pikmin Bloom 菇點截圖,自動回傳 GPS 座標、Google Maps 連結與互動式地圖。
 
-- 識別:Gemini 2.5 Flash(多候選名)
+- 識別:OpenAI gpt-4o-mini(多候選名 vision)
 - 解析:Wikidata → Wikipedia → Nominatim → Photon 四層級聯
 - 部署:Zeabur(polling,免 webhook)
 - 月成本目標:< USD $1
@@ -18,7 +18,7 @@ Telegram Bot:傳 Pikmin Bloom 菇點截圖,自動回傳 GPS 座標、Google Maps
 | 變數 | 取得方式 |
 |---|---|
 | `TELEGRAM_TOKEN` | Telegram 找 [@BotFather](https://t.me/BotFather) → `/newbot` |
-| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/app/apikey) → Create API Key |
+| `OPENAI_API_KEY` | [OpenAI Platform](https://platform.openai.com/api-keys) → Create new secret key(需綁定付款方式,gpt-4o-mini 月成本目標 < USD $1) |
 | `CONTACT_EMAIL` | 你的真實信箱(Nominatim 的使用條款要求標示;**請勿用 `test@example.com` 之類的假 email,會被擋 403**) |
 
 ### 2. 本機開發
@@ -66,10 +66,10 @@ pytest -q
 | 變數 | 必填 | 預設 |
 |---|---|---|
 | `TELEGRAM_TOKEN` | ✅ | — |
-| `GEMINI_API_KEY` | ✅ | — |
+| `OPENAI_API_KEY` | ✅ | — |
 | `CONTACT_EMAIL` | ✅ | — |
 | `LOG_LEVEL` | ❌ | `INFO` |
-| `LLM_MODEL` | ❌ | `gemini-2.5-flash` |
+| `LLM_MODEL` | ❌ | `gpt-4o-mini` |
 
 ---
 

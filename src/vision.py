@@ -1,8 +1,9 @@
 import asyncio
+import base64
 import json
 from typing import Any
 
-import google.generativeai as genai
+from openai import AsyncOpenAI
 
 from src.config import settings
 from src.logger import get_logger
@@ -83,21 +84,14 @@ class VisionError(Exception):
     pass
 
 
-_model: Any = None
+_client: Any = None
 
 
-def _get_model() -> Any:
-    global _model
-    if _model is None:
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        _model = genai.GenerativeModel(
-            settings.LLM_MODEL,
-            generation_config={
-                "response_mime_type": "application/json",
-                "temperature": 0.1,
-            },
-        )
-    return _model
+def _get_client() -> Any:
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+    return _client
 
 
 def _dedup_preserve_order(items: list[str]) -> list[str]:
@@ -117,20 +111,38 @@ def _dedup_preserve_order(items: list[str]) -> list[str]:
 async def identify_place(image_bytes: bytes) -> PlaceCandidates:
     """回傳候選名陣列。完全無法識別時回 candidates=[]。
     LLM 呼叫失敗或 JSON 解析失敗拋 VisionError。"""
-    model = _get_model()
-    image_part = {"mime_type": "image/jpeg", "data": image_bytes}
+    client = _get_client()
+    b64 = base64.b64encode(image_bytes).decode("ascii")
 
     try:
         response = await asyncio.wait_for(
-            model.generate_content_async([PROMPT, image_part]),
+            client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": PROMPT},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{b64}"
+                                },
+                            },
+                        ],
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            ),
             timeout=VISION_TIMEOUT_SEC,
         )
     except asyncio.TimeoutError as e:
-        raise VisionError(f"Gemini timeout after {VISION_TIMEOUT_SEC}s") from e
+        raise VisionError(f"OpenAI timeout after {VISION_TIMEOUT_SEC}s") from e
     except Exception as e:
-        raise VisionError(f"Gemini call failed: {type(e).__name__}") from e
+        raise VisionError(f"OpenAI call failed: {type(e).__name__}") from e
 
-    raw = (response.text or "").strip()
+    raw = (response.choices[0].message.content or "").strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
         if raw.lower().startswith("json"):

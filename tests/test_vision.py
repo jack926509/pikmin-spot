@@ -1,4 +1,3 @@
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -9,8 +8,21 @@ from src import vision
 
 def _mock_response(payload: dict | str) -> MagicMock:
     r = MagicMock()
-    r.text = payload if isinstance(payload, str) else json.dumps(payload)
+    msg = MagicMock()
+    msg.content = payload if isinstance(payload, str) else json.dumps(payload)
+    choice = MagicMock()
+    choice.message = msg
+    r.choices = [choice]
     return r
+
+
+def _fake_client(response: MagicMock | None = None, side_effect=None) -> MagicMock:
+    fake = MagicMock()
+    if side_effect is not None:
+        fake.chat.completions.create = AsyncMock(side_effect=side_effect)
+    else:
+        fake.chat.completions.create = AsyncMock(return_value=response)
+    return fake
 
 
 @pytest.mark.asyncio
@@ -24,9 +36,7 @@ async def test_identify_place_parses_valid_json():
         "search_hints": ["Minato"],
         "confidence": "high",
     })
-    fake = MagicMock()
-    fake.generate_content_async = AsyncMock(return_value=resp)
-    with patch.object(vision, "_get_model", return_value=fake):
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
         place = await vision.identify_place(b"img")
 
     # case-insensitive dedup
@@ -38,9 +48,7 @@ async def test_identify_place_parses_valid_json():
 @pytest.mark.asyncio
 async def test_identify_place_handles_empty_candidates():
     resp = _mock_response({"candidates": [], "error": "no landmark"})
-    fake = MagicMock()
-    fake.generate_content_async = AsyncMock(return_value=resp)
-    with patch.object(vision, "_get_model", return_value=fake):
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
         place = await vision.identify_place(b"img")
     assert place.candidates == []
 
@@ -48,9 +56,7 @@ async def test_identify_place_handles_empty_candidates():
 @pytest.mark.asyncio
 async def test_identify_place_strips_markdown_codefence():
     resp = _mock_response('```json\n{"candidates": ["A"], "country": "C"}\n```')
-    fake = MagicMock()
-    fake.generate_content_async = AsyncMock(return_value=resp)
-    with patch.object(vision, "_get_model", return_value=fake):
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
         place = await vision.identify_place(b"img")
     assert place.candidates == ["A"]
     assert place.country == "C"
@@ -59,17 +65,14 @@ async def test_identify_place_strips_markdown_codefence():
 @pytest.mark.asyncio
 async def test_identify_place_raises_on_invalid_json():
     resp = _mock_response("not-json")
-    fake = MagicMock()
-    fake.generate_content_async = AsyncMock(return_value=resp)
-    with patch.object(vision, "_get_model", return_value=fake):
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
         with pytest.raises(vision.VisionError):
             await vision.identify_place(b"img")
 
 
 @pytest.mark.asyncio
 async def test_identify_place_raises_on_llm_failure():
-    fake = MagicMock()
-    fake.generate_content_async = AsyncMock(side_effect=RuntimeError("boom"))
-    with patch.object(vision, "_get_model", return_value=fake):
+    fake = _fake_client(side_effect=RuntimeError("boom"))
+    with patch.object(vision, "_get_client", return_value=fake):
         with pytest.raises(vision.VisionError):
             await vision.identify_place(b"img")

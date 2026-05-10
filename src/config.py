@@ -10,11 +10,11 @@ class Settings(BaseSettings):
     )
 
     TELEGRAM_TOKEN: str = Field(..., min_length=1)
-    GEMINI_API_KEY: str = Field(..., min_length=1)
+    OPENAI_API_KEY: str = Field(..., min_length=1)
     CONTACT_EMAIL: str = Field(..., min_length=1)
 
     LOG_LEVEL: str = "INFO"
-    LLM_MODEL: str = "gemini-2.5-flash"
+    LLM_MODEL: str = "gpt-4o-mini"
 
 
 settings = Settings()
