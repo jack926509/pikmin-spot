@@ -63,14 +63,17 @@ def test_build_queries_empty_returns_nothing():
 
 
 @pytest.mark.asyncio
-async def test_resolve_short_circuits_on_first_hit():
+async def test_resolve_returns_highest_priority_when_multiple_hit():
+    # 兩個 fast provider 同時命中,平行查仍應回傳優先序較高的 p1
     p1 = _FakeProvider("p1", _hit("p1"))
     p2 = _FakeProvider("p2", _hit("p2"))
     place = PlaceCandidates(candidates=["X"], country="C")
     coords = await resolve(place, providers=[p1, p2])
     assert coords is not None and coords.source == "p1"
+    # 第一個 query 命中 → 不再推進到第二個 query
     assert len(p1.calls) == 1
-    assert len(p2.calls) == 0
+    # 平行模式下 p2 可能會被叫到(端看 task scheduling),但至多 1 次
+    assert len(p2.calls) <= 1
 
 
 @pytest.mark.asyncio
@@ -80,7 +83,7 @@ async def test_resolve_returns_none_when_all_miss():
     place = PlaceCandidates(candidates=["X"], country="C")
     coords = await resolve(place, providers=[p1, p2])
     assert coords is None
-    # 兩個 query (X, C / X) × 2 providers = 4 次
+    # 兩個 query (X, C / X) × 2 providers(平行) = 4 次
     assert len(p1.calls) == 2
     assert len(p2.calls) == 2
 
@@ -94,3 +97,26 @@ async def test_resolve_continues_after_provider_error():
     assert coords is not None and coords.source == "p2"
     assert len(p1.calls) == 1
     assert len(p2.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_nominatim_only_runs_when_fast_providers_miss():
+    fast = _FakeProvider("fast", _miss)
+    nom = _FakeProvider("nominatim", _hit("nominatim"))
+    place = PlaceCandidates(candidates=["X"], country="C")
+    coords = await resolve(place, providers=[fast, nom])
+    assert coords is not None and coords.source == "nominatim"
+    # fast 對每 query 跑一次後 miss,接著 nominatim 命中第一個 query → 早退
+    assert len(fast.calls) == 1
+    assert len(nom.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_skips_nominatim_when_fast_hits():
+    fast = _FakeProvider("fast", _hit("fast"))
+    nom = _FakeProvider("nominatim", _hit("nominatim"))
+    place = PlaceCandidates(candidates=["X"], country="C")
+    coords = await resolve(place, providers=[fast, nom])
+    assert coords is not None and coords.source == "fast"
+    # fast 第一個 query 就命中,nominatim 不該被叫
+    assert len(nom.calls) == 0

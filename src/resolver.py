@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from src.logger import get_logger
@@ -11,6 +12,7 @@ from src.providers.wikipedia import wikipedia
 log = get_logger(__name__)
 
 DEFAULT_PROVIDERS: list[GeocoderProvider] = [wikidata, wikipedia, nominatim, photon]
+SLOW_PROVIDER_NAMES = {"nominatim"}  # 受 1 req/sec 限速;僅作為 fallback
 
 
 def build_queries(place: PlaceCandidates) -> list[str]:
@@ -54,30 +56,81 @@ def build_queries(place: PlaceCandidates) -> list[str]:
     return out
 
 
+async def _safe_lookup(
+    provider: GeocoderProvider, query: str, hint_country: str
+) -> Optional[Coords]:
+    """provider.lookup 的非拋出版本,錯誤吃掉並 log。"""
+    try:
+        return await provider.lookup(query, hint_country)
+    except asyncio.CancelledError:
+        raise
+    except ProviderError as e:
+        log.warning(
+            "provider error", provider=provider.name, query=query, error=str(e)
+        )
+        return None
+    except Exception as e:
+        log.warning(
+            "provider crash", provider=provider.name, query=query, error=str(e)
+        )
+        return None
+
+
+async def _parallel_first_hit(
+    providers: list[GeocoderProvider], query: str, hint_country: str
+) -> Optional[Coords]:
+    """同時 fire 一組 fast providers,依優先序回傳第一個 non-None。
+    命中後取消剩餘 tasks 避免浪費 HTTP 工。"""
+    if not providers:
+        return None
+    tasks = [
+        asyncio.create_task(_safe_lookup(p, query, hint_country)) for p in providers
+    ]
+    try:
+        for i, p in enumerate(providers):
+            result = await tasks[i]
+            if result:
+                log.info(
+                    "hit",
+                    query=query,
+                    provider=p.name,
+                    lat=result.lat,
+                    lng=result.lng,
+                )
+                return result
+        return None
+    finally:
+        pending = [t for t in tasks if not t.done()]
+        for t in pending:
+            t.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+
 async def resolve(
     place: PlaceCandidates,
     providers: Optional[list[GeocoderProvider]] = None,
 ) -> Optional[Coords]:
-    """對每個 query × 每個 provider 級聯查詢。任一命中立即回傳。全失敗回 None。"""
+    """對每個 query 平行查 fast providers,全 miss 才依序 fallback 到 slow。
+    任一命中立即回傳,優先序由 providers 陣列順序決定。"""
     providers = providers if providers is not None else DEFAULT_PROVIDERS
     queries = build_queries(place)
     if not queries:
         log.warning("resolve: empty queries")
         return None
 
+    fast = [p for p in providers if p.name not in SLOW_PROVIDER_NAMES]
+    slow = [p for p in providers if p.name in SLOW_PROVIDER_NAMES]
+
     for q in queries:
-        for p in providers:
-            try:
-                result = await p.lookup(q, place.country)
-            except ProviderError as e:
-                log.warning("provider error", provider=p.name, query=q, error=str(e))
-                continue
-            except Exception as e:
-                log.warning("provider crash", provider=p.name, query=q, error=str(e))
-                continue
-            if result:
-                log.info("hit", query=q, provider=p.name,
-                         lat=result.lat, lng=result.lng)
-                return result
+        result = await _parallel_first_hit(fast, q, place.country)
+        if result:
+            return result
+        for p in slow:
+            r = await _safe_lookup(p, q, place.country)
+            if r:
+                log.info("hit", query=q, provider=p.name, lat=r.lat, lng=r.lng)
+                return r
+
     log.info("resolve: no hit", n_queries=len(queries))
     return None
