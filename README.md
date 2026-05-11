@@ -13,7 +13,7 @@ Telegram Bot:傳 Pikmin Bloom 菇點截圖,自動回傳 GPS 座標、Google Maps
 
 ## 快速開始
 
-### 1. 取得三組免費憑證
+### 1. 取得三組憑證
 
 | 變數 | 取得方式 |
 |---|---|
@@ -24,7 +24,7 @@ Telegram Bot:傳 Pikmin Bloom 菇點截圖,自動回傳 GPS 座標、Google Maps
 ### 2. 本機開發
 
 ```bash
-git clone <YOUR_REPO_URL>
+git clone https://github.com/jack926509/pikmin-spot.git
 cd pikmin-spot
 
 # 建議 Python 3.11+
@@ -53,8 +53,8 @@ pytest -q
 
 ### 4. 部署到 Zeabur
 
-1. Push 到 GitHub
-2. zeabur.com → Create Project → Add Service → GitHub → 選 repo
+1. ✅ Push 到 GitHub(本 repo 已就緒)
+2. zeabur.com → Create Project → Add Service → GitHub → 選 `jack926509/pikmin-spot`
 3. Variables 頁籤填入 §1 的三個必填變數
 4. Deploy。Build log 出現 `Bot starting` 即可
 5. **Service Plan 必須選長駐型**(不能用 Serverless,polling 會中斷)
@@ -76,6 +76,13 @@ pytest -q
 ## 識別率測試結果
 
 > SPEC §11 要求:準備 20 張不同國家的菇點截圖,跑過全部 → 至少 18 張(≥90%)有正確座標。
+
+**本機聯通驗證**(2026-05-10 完成):
+
+- ✅ 真實 Telegram Bot polling 啟動正常(`getMe` 200、Application started)
+- ✅ OpenAI gpt-4o-mini key 通,vision pipeline 全鏈路工作
+- ✅ 25 unit tests 全綠
+- ⏳ 真實 20 張識別率測試(等收集 fixtures)
 
 ### 測試方法
 
@@ -129,7 +136,7 @@ pikmin-spot/
 ├── src/
 │   ├── main.py          # 入口
 │   ├── bot.py           # Telegram handlers
-│   ├── vision.py        # Gemini 多候選識別
+│   ├── vision.py        # OpenAI gpt-4o-mini 多候選識別
 │   ├── resolver.py      # 4 層級聯解析
 │   ├── providers/       # wikidata / wikipedia / nominatim / photon
 │   ├── formatter.py
