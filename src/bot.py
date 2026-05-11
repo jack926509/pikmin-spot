@@ -3,6 +3,7 @@ from io import BytesIO
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from src.cache import image_cache
 from src.formatter import (
     format_no_coords,
     format_success,
@@ -89,6 +90,28 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await file.download_to_memory(bio)
         image_bytes = bio.getvalue()
 
+        cached = image_cache.get(image_bytes)
+        if cached:
+            place, coords = cached
+            await status.edit_text(
+                format_success(place, coords),
+                parse_mode="Markdown",
+                disable_web_page_preview=True,
+                reply_markup=google_maps_keyboard(coords.lat, coords.lng),
+            )
+            await context.bot.send_location(
+                chat_id=chat_id,
+                latitude=coords.lat,
+                longitude=coords.lng,
+            )
+            log.info(
+                "done (cached)",
+                user_id=user_id,
+                source=coords.source,
+                candidate=place.candidates[0] if place.candidates else "",
+            )
+            return
+
         try:
             place = await identify_place(image_bytes)
         except VisionError as e:
@@ -116,6 +139,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             )
             return
 
+        image_cache.put(image_bytes, place, coords)
         await status.edit_text(
             format_success(place, coords),
             parse_mode="Markdown",

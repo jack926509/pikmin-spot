@@ -9,6 +9,7 @@ from src.providers.base import (
     USER_AGENT,
     GeocoderProvider,
     ProviderError,
+    http_get_with_retry,
 )
 
 log = get_logger(__name__)
@@ -82,7 +83,7 @@ class WikidataProvider(GeocoderProvider):
             "type": "item",
             "limit": 5,
         }
-        r = await client.get(SEARCH_URL, params=params)
+        r = await http_get_with_retry(client, SEARCH_URL, params=params)
         r.raise_for_status()
         data = r.json()
         return data.get("search") or []
@@ -104,7 +105,7 @@ class WikidataProvider(GeocoderProvider):
         self, client: httpx.AsyncClient, qid: str
     ) -> Optional[tuple[float, float]]:
         url = ENTITY_URL_TMPL.format(qid=qid)
-        r = await client.get(url)
+        r = await http_get_with_retry(client, url)
         r.raise_for_status()
         data = r.json()
         try:

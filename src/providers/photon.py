@@ -9,6 +9,7 @@ from src.providers.base import (
     USER_AGENT,
     GeocoderProvider,
     ProviderError,
+    http_get_with_retry,
 )
 
 log = get_logger(__name__)
@@ -28,7 +29,7 @@ class PhotonProvider(GeocoderProvider):
                 timeout=HTTP_TIMEOUT_SEC,
                 headers={"User-Agent": USER_AGENT},
             ) as client:
-                r = await client.get(API_URL, params=params)
+                r = await http_get_with_retry(client, API_URL, params=params)
                 r.raise_for_status()
                 data = r.json()
         except httpx.HTTPError as e:
