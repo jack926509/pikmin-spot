@@ -1,25 +1,23 @@
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    MessageHandler,
-    filters,
-)
+import asyncio
 
-from src.bot import cmd_help, cmd_start, handle_non_photo, handle_photo
+from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
+
+from src.bot import create_app
 from src.config import settings
 from src.logger import get_logger
 
 log = get_logger(__name__)
 
 
-def main() -> None:
+async def _amain() -> None:
     log.info("Bot starting", model=settings.LLM_MODEL)
-    app = Application.builder().token(settings.TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_non_photo))
-    app.run_polling(allowed_updates=["message"])
+    app = create_app()
+    handler = AsyncSocketModeHandler(app, settings.SLACK_APP_TOKEN)
+    await handler.start_async()
+
+
+def main() -> None:
+    asyncio.run(_amain())
 
 
 if __name__ == "__main__":

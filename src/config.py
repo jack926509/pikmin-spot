@@ -9,7 +9,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    TELEGRAM_TOKEN: str = Field(..., min_length=1)
+    SLACK_BOT_TOKEN: str = Field(..., min_length=1)
+    SLACK_APP_TOKEN: str = Field(..., min_length=1)
     OPENAI_API_KEY: str = Field(..., min_length=1)
     CONTACT_EMAIL: str = Field(..., min_length=1)
 
