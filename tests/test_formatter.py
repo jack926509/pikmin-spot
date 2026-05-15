@@ -1,15 +1,14 @@
 from src.formatter import (
-    _escape_md,
+    _escape_mrkdwn,
     format_no_coords,
     format_success,
     format_unknown,
     format_vision_failed,
-    google_maps_keyboard,
     google_maps_url,
-    google_search_keyboard,
     google_search_url,
 )
 from src.models import Coords, PlaceCandidates
+from src.slack_blocks import no_coords_blocks, success_blocks, text_blocks
 
 
 def test_google_maps_url_basic():
@@ -25,25 +24,37 @@ def test_google_search_url_url_encodes_spaces_and_unicode():
     assert "%E6%9D%B1%E4%BA%AC" in url2  # 東京 URL-encoded
 
 
-def test_escape_md_handles_special_chars():
-    assert _escape_md("a_b*c[d]`e") == "a\\_b\\*c\\[d\\]\\`e"
-    assert _escape_md("") == ""
-    assert _escape_md("plain") == "plain"
+def test_escape_mrkdwn_handles_html_specials():
+    assert _escape_mrkdwn("A & B <c> d") == "A &amp; B &lt;c&gt; d"
+    assert _escape_mrkdwn("") == ""
+    assert _escape_mrkdwn("plain") == "plain"
+    # 不額外逃逸 *, _, `, ~ — 由呼叫端決定。
+    assert _escape_mrkdwn("a_b*c`d~e") == "a_b*c`d~e"
 
 
-def test_google_maps_keyboard_structure():
-    kb = google_maps_keyboard(1.0, 2.0)
-    assert len(kb.inline_keyboard) == 1
-    btn = kb.inline_keyboard[0][0]
-    assert btn.url == "https://www.google.com/maps?q=1.0,2.0"
-    assert "Google Maps" in btn.text
+def test_success_blocks_structure():
+    place = PlaceCandidates(candidates=["Tokyo Tower"], country="Japan")
+    coords = Coords(lat=1.0, lng=2.0, source="wikidata", matched_query="x")
+    blocks = success_blocks(place, coords)
+    types = [b["type"] for b in blocks]
+    assert "section" in types and "actions" in types
+    btn = next(b for b in blocks if b["type"] == "actions")["elements"][0]
+    assert btn["url"] == "https://www.google.com/maps?q=1.0,2.0"
+    assert btn["type"] == "button"
 
 
-def test_google_search_keyboard_structure():
-    kb = google_search_keyboard("Tokyo Tower", "Japan")
-    btn = kb.inline_keyboard[0][0]
-    assert btn.url.startswith("https://www.google.com/search?q=")
-    assert "Google" in btn.text
+def test_no_coords_blocks_has_search_button():
+    place = PlaceCandidates(candidates=["Mystery"], country="Nowhere")
+    blocks = no_coords_blocks(place)
+    btn = next(b for b in blocks if b["type"] == "actions")["elements"][0]
+    assert btn["url"].startswith("https://www.google.com/search?q=")
+    assert "Mystery" in btn["url"]
+    assert "Nowhere" in btn["url"]
+
+
+def test_text_blocks_simple():
+    blocks = text_blocks("hello")
+    assert blocks == [{"type": "section", "text": {"type": "mrkdwn", "text": "hello"}}]
 
 
 def test_format_success_renders_all_fields():
@@ -62,8 +73,6 @@ def test_format_success_renders_all_fields():
     assert "Japan · Tokyo" in out
     assert "35.658600, 139.745400" in out
     assert "wikidata" in out
-    # 新版不再內嵌 Google Maps 文字連結(改用 inline keyboard)
-    assert "[Google Maps]" not in out
 
 
 def test_format_success_skips_local_when_same_as_primary():
@@ -74,15 +83,19 @@ def test_format_success_skips_local_when_same_as_primary():
     )
     coords = Coords(lat=0, lng=0, source="x", matched_query="x")
     out = format_success(place, coords)
-    # 應只出現一次
     assert out.count("Tokyo Tower") == 1
 
 
+def test_format_success_escapes_html_specials_in_name():
+    place = PlaceCandidates(candidates=["A&B <Spot>"], country="X")
+    coords = Coords(lat=0, lng=0, source="x", matched_query="x")
+    out = format_success(place, coords)
+    assert "A&amp;B &lt;Spot&gt;" in out
+    assert "<Spot>" not in out
+
+
 def test_format_no_coords_includes_name_and_loc():
-    place = PlaceCandidates(
-        candidates=["Mystery Spot"],
-        country="Nowhere",
-    )
+    place = PlaceCandidates(candidates=["Mystery Spot"], country="Nowhere")
     out = format_no_coords(place)
     assert "Mystery Spot" in out
     assert "Nowhere" in out

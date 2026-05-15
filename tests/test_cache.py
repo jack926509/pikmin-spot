@@ -1,4 +1,4 @@
-from src.cache import LRUResultCache
+from src.cache import InFlightSet, LRUResultCache
 from src.models import Coords, PlaceCandidates
 
 
@@ -67,3 +67,27 @@ def test_cache_overwrite_existing_key():
     got = cache.get(b"key")
     assert got is not None
     assert got[0].candidates == ["Second"]
+
+
+def test_in_flight_acquire_then_release():
+    s = InFlightSet()
+    assert s.acquire("F1") is True
+    assert "F1" in s
+    # 第二次同 key 取得失敗(防重)
+    assert s.acquire("F1") is False
+    s.release("F1")
+    assert "F1" not in s
+    # 釋放後可再取得
+    assert s.acquire("F1") is True
+
+
+def test_in_flight_empty_key_rejected():
+    s = InFlightSet()
+    assert s.acquire("") is False
+    assert len(s) == 0
+
+
+def test_in_flight_release_unknown_is_noop():
+    s = InFlightSet()
+    s.release("never-acquired")  # should not raise
+    assert len(s) == 0
