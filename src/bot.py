@@ -56,6 +56,17 @@ def create_app() -> AsyncApp:
         await ack()
         await respond(text=HELP_TEXT, blocks=text_blocks(HELP_TEXT))
 
+    # URL buttons open the link client-side, but Slack still posts a
+    # block_actions event and expects ack within 3s — without these
+    # handlers Bolt logs "unhandled request" 404 on every click.
+    @app.action("open_gmaps")
+    async def _ack_gmaps(ack) -> None:  # type: ignore[no-untyped-def]
+        await ack()
+
+    @app.action("open_search")
+    async def _ack_search(ack) -> None:  # type: ignore[no-untyped-def]
+        await ack()
+
     @app.event("app_mention")
     async def _on_mention(event, client) -> None:  # type: ignore[no-untyped-def]
         await client.chat_postMessage(
