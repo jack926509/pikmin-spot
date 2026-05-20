@@ -267,6 +267,50 @@ async def test_resolve_passes_anchors_to_rerank():
 
 
 @pytest.mark.asyncio
+async def test_resolve_rejects_far_hit_when_vision_has_coords_guess():
+    """若 vision 提供粗座標,離譜遠的命中應被視為錯誤匹配(同名地點),
+    保留為 anchor 並觸發 rerank。"""
+    # provider 回東京座標,但 vision 認為地標在美國 Salvo NC
+    far_provider = _FakeProvider("far", _hit("far", lat=35.65, lng=139.74))
+    place = PlaceCandidates(
+        candidates=["Some Bridge"], country="USA",
+        approximate_coords_guess=(35.55, -75.47, 1500),
+    )
+
+    captured_anchors: list[Coords] = []
+
+    async def fake_rerank(**kw):
+        captured_anchors.extend(kw.get("anchor_coords") or [])
+        return None
+
+    with patch.object(
+        resolver_mod, "llm_final_reasoning",
+        AsyncMock(side_effect=fake_rerank),
+    ):
+        coords = await resolve(place, providers=[far_provider])
+
+    # 直接回 None(rerank 也回 None),但東京命中應留在 anchor
+    assert coords is None
+    assert len(captured_anchors) >= 1
+    assert any(c.source == "far" for c in captured_anchors)
+
+
+@pytest.mark.asyncio
+async def test_resolve_accepts_near_hit_when_vision_has_coords_guess():
+    """若命中座標離 vision guess 在合理範圍,正常返回。"""
+    # vision 認為在 Salvo NC,provider 回 NC 內某點(距離 < 50km)
+    near_provider = _FakeProvider("near", _hit("near", lat=35.60, lng=-75.50))
+    place = PlaceCandidates(
+        candidates=["X"], country="USA",
+        approximate_coords_guess=(35.55, -75.47, 1500),
+    )
+
+    coords = await resolve(place, providers=[near_provider], enable_rerank=False)
+    assert coords is not None
+    assert coords.source == "near"
+
+
+@pytest.mark.asyncio
 async def test_resolve_rerank_failure_does_not_crash():
     """rerank 拋例外時,resolve 應吞掉並回 None。"""
     miss_provider = _FakeProvider("miss", _miss)

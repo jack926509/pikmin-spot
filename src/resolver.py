@@ -14,6 +14,7 @@ from typing import Optional
 from src.llm_rerank import RerankError, llm_final_reasoning
 from src.logger import get_logger
 from src.models import Coords, PlaceCandidates
+from src.providers._geo import haversine_m
 from src.providers.base import GeocoderProvider, ProviderError
 from src.providers.nominatim import nominatim
 from src.providers.photon import photon
@@ -24,6 +25,10 @@ log = get_logger(__name__)
 
 DEFAULT_PROVIDERS: list[GeocoderProvider] = [wikidata, wikipedia, nominatim, photon]
 SLOW_PROVIDER_NAMES = {"nominatim"}  # 受 1 req/sec 限速;僅作為 fallback
+
+# 若 vision 給了粗座標,離 vision guess 超過此距離的命中視為錯誤匹配。
+# 1500km ≈ 兩個鄰國的最大距離,足以容忍 vision 的區域猜測誤差。
+_SANITY_MAX_DISTANCE_M = 1_500_000
 
 # 通用詞 stopword:抽核心名時要剝掉
 _GENERIC_TOKENS = {
@@ -185,6 +190,24 @@ async def _parallel_first_hit(
             await asyncio.gather(*pending, return_exceptions=True)
 
 
+def _is_sane(coords: Coords, place: PlaceCandidates) -> bool:
+    """若 vision 提供 approximate_coords_guess,檢查結果是否在合理距離內。
+    超過 1500km 視為錯誤匹配(例如同名地點在另一國)。"""
+    if not place.approximate_coords_guess:
+        return True
+    glat, glng, _ = place.approximate_coords_guess
+    dist = haversine_m(coords.lat, coords.lng, glat, glng)
+    if dist > _SANITY_MAX_DISTANCE_M:
+        log.info(
+            "resolve: reject far hit",
+            source=coords.source,
+            distance_km=int(dist / 1000),
+            matched_query=coords.matched_query,
+        )
+        return False
+    return True
+
+
 async def resolve(
     place: PlaceCandidates,
     providers: Optional[list[GeocoderProvider]] = None,
@@ -215,12 +238,17 @@ async def resolve(
             fast, q, place.country, anchor_collector=anchor_coords
         )
         if result:
-            return result
+            if _is_sane(result, place):
+                return result
+            # 距離離譜:不直接回,但保留為 anchor(可能是同名地點)
+            anchor_coords.append(result)
         for p in slow:
             r = await _safe_lookup(p, q, place.country)
             if r:
-                log.info("hit", query=q, provider=p.name, lat=r.lat, lng=r.lng)
-                return r
+                if _is_sane(r, place):
+                    log.info("hit", query=q, provider=p.name, lat=r.lat, lng=r.lng)
+                    return r
+                anchor_coords.append(r)
 
     log.info(
         "resolve: cascade miss",

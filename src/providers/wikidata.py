@@ -1,9 +1,11 @@
+import re
 from typing import Any, Optional
 
 import httpx
 
 from src.logger import get_logger
 from src.models import Coords
+from src.providers._geo import country_to_cc
 from src.providers.base import (
     HTTP_TIMEOUT_SEC,
     USER_AGENT,
@@ -24,8 +26,16 @@ GEO_KEYWORDS = (
     "garden", "square", "plaza", "tomb", "river", "island", "waterfall",
     "valley", "hill", "peak", "village", "town", "city", "district",
     "harbour", "harbor", "port", "beach", "cape", "memorial", "statue",
-    "shrine", "lighthouse", "stadium", "arena", "library", "gallery",
+    "lighthouse", "stadium", "arena", "library", "gallery",
     "chorten", "lhakhang", "dzong",
+    # 擴充:Wayspot 常見類型
+    "footbridge", "boardwalk", "trail", "trailhead", "playground",
+    "fountain", "sculpture", "mural", "art installation", "gate",
+    "historic", "historical marker", "plaque", "viewpoint", "lookout",
+    "neighborhood", "neighbourhood", "community", "school", "university",
+    "tourist attraction", "point of interest", "heritage",
+    "公園", "神社", "寺", "塔", "橋", "城", "宮", "館", "院", "亭",
+    "山", "湖", "川", "河", "島", "海岸",
 )
 
 
@@ -34,6 +44,10 @@ def _is_geo_entity(description: str) -> bool:
         return False
     desc_low = description.lower()
     return any(kw in desc_low for kw in GEO_KEYWORDS)
+
+
+def _has_cjk(s: str) -> bool:
+    return bool(re.search(r"[ぁ-ヿ一-鿿가-힣]", s or ""))
 
 
 class WikidataProvider(GeocoderProvider):
@@ -45,12 +59,38 @@ class WikidataProvider(GeocoderProvider):
         # wbsearchentities is an entity-name search; address-style strings
         # like "Name, Region, Country" hurt recall. Use the leading name part.
         search_term = query.split(",", 1)[0].strip() or query
+
+        # 搜尋語言:有 CJK 字串時加跑該語言;國家提示也加。英文永遠先試。
+        languages = ["en"]
+        cc = country_to_cc(hint_country)
+        if _has_cjk(search_term):
+            if re.search(r"[ぁ-ヿ]", search_term):
+                languages.append("ja")
+            elif re.search(r"[가-힣]", search_term):
+                languages.append("ko")
+            elif re.search(r"[一-鿿]", search_term):
+                languages.append("zh")
+        elif cc in ("jp",):
+            languages.append("ja")
+        elif cc in ("cn", "tw", "hk", "mo"):
+            languages.append("zh")
+        elif cc == "kr":
+            languages.append("ko")
+        # dedupe preserve order
+        languages = list(dict.fromkeys(languages))
+
         try:
             async with httpx.AsyncClient(
                 timeout=HTTP_TIMEOUT_SEC,
                 headers={"User-Agent": USER_AGENT},
             ) as client:
-                hits = await self._search(client, search_term)
+                hits: list[dict[str, Any]] = []
+                for lang in languages:
+                    found = await self._search(client, search_term, lang)
+                    hits.extend(found)
+                    if found:
+                        # 已找到就先用,不一定要再跑下個語言
+                        break
                 if not hits:
                     return None
                 hit = self._pick_best(hits, hint_country)
@@ -74,14 +114,16 @@ class WikidataProvider(GeocoderProvider):
         except httpx.HTTPError as e:
             raise ProviderError(f"wikidata http: {type(e).__name__}: {e}") from e
 
-    async def _search(self, client: httpx.AsyncClient, query: str) -> list[dict[str, Any]]:
+    async def _search(
+        self, client: httpx.AsyncClient, query: str, language: str = "en"
+    ) -> list[dict[str, Any]]:
         params = {
             "action": "wbsearchentities",
             "search": query,
-            "language": "en",
+            "language": language,
             "format": "json",
             "type": "item",
-            "limit": 5,
+            "limit": 7,
         }
         r = await http_get_with_retry(client, SEARCH_URL, params=params)
         r.raise_for_status()
