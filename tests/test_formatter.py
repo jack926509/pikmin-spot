@@ -104,3 +104,36 @@ def test_format_no_coords_includes_name_and_loc():
 def test_format_unknown_and_vision_failed_are_non_empty():
     assert format_unknown().strip()
     assert format_vision_failed().strip()
+
+
+def test_format_success_marks_approximate_clearly():
+    place = PlaceCandidates(candidates=["X"], country="USA")
+    coords = Coords(
+        lat=35.5, lng=-75.5, source="llm_rerank",
+        matched_query="X", is_approximate=True, accuracy_m=1500,
+    )
+    out = format_success(place, coords)
+    assert "大致位置" in out
+    assert "區域估計" in out or "中精度" in out or "±1500m" in out
+
+
+def test_format_success_translates_llm_rerank_source():
+    place = PlaceCandidates(candidates=["X"], country="USA")
+    coords = Coords(
+        lat=35.5, lng=-75.5, source="llm_rerank",
+        matched_query="X", is_approximate=True, accuracy_m=1500,
+    )
+    out = format_success(place, coords)
+    assert "AI 推理" in out
+    assert "llm_rerank" not in out
+
+
+def test_format_success_omits_approximate_warning_when_exact():
+    place = PlaceCandidates(candidates=["X"], country="USA")
+    coords = Coords(
+        lat=35.5, lng=-75.5, source="wikidata",
+        matched_query="X", is_approximate=False,
+    )
+    out = format_success(place, coords)
+    assert "大致位置" not in out
+    assert "推估" not in out
