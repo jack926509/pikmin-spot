@@ -17,6 +17,7 @@ from src.models import Coords, PlaceCandidates
 from src.providers._geo import haversine_m
 from src.providers.base import GeocoderProvider, ProviderError
 from src.providers.nominatim import nominatim
+from src.providers.overpass import overpass
 from src.providers.photon import photon
 from src.providers.wikidata import wikidata
 from src.providers.wikipedia import wikipedia
@@ -274,10 +275,51 @@ async def resolve(
         n_anchors=len(anchor_coords),
     )
 
+    # 精準命中嘗試:Overpass 在 vision 粗座標附近做 OSM 結構化查詢。
+    # 多數情況下,小景點若在 OSM 但 Nominatim/Photon 字串搜尋找不到,
+    # Overpass 的 around-radius + name regex 仍能精確命中。
+    precise = await _try_overpass(place, anchor_coords)
+    if precise:
+        return precise
+
     if enable_rerank:
         return await _try_rerank(place, anchor_coords)
 
     return None
+
+
+async def _try_overpass(
+    place: PlaceCandidates, anchor_coords: list[Coords]
+) -> Optional[Coords]:
+    """用 Overpass 在 vision 粗座標附近精準搜尋 OSM。
+    成功 → 返回精確座標(非 approximate)。失敗 → None,鼓勵後續 rerank。"""
+    if not place.approximate_coords_guess or not place.candidates:
+        return None
+    primary = place.candidates[0]
+    try:
+        result = await overpass.lookup(
+            primary,
+            hint_country=place.country,
+            hint_coords=place.approximate_coords_guess,
+        )
+    except ProviderError as e:
+        log.warning("overpass provider error", error=str(e))
+        return None
+    except Exception as e:
+        log.warning("overpass crash", error=str(e))
+        return None
+    if not result:
+        return None
+    if not _is_sane(result, place):
+        # 不應該發生(Overpass around 已限制半徑),但保險
+        anchor_coords.append(result)
+        return None
+    log.info(
+        "resolve: overpass precise hit",
+        lat=result.lat, lng=result.lng,
+        canonical=result.canonical_name,
+    )
+    return result
 
 
 async def _try_rerank(

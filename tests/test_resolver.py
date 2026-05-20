@@ -351,6 +351,51 @@ async def test_resolve_rejects_farrow_footbridge_regression():
     assert any(c.source == "photon" for c in captured_anchors)
 
 
+@pytest.mark.asyncio
+async def test_resolve_uses_overpass_for_precise_hit_when_cascade_misses():
+    """所有 cascade provider miss + 有 hint_coords → Overpass 精準命中。
+    這就是 Farrow Footbridge 的理想結局:返回 (35.547, -75.466)。"""
+    miss = _FakeProvider("miss", _miss)
+    place = PlaceCandidates(
+        candidates=["The Farrow Community Beach Footbridge"],
+        country="United States",
+        approximate_coords_guess=(35.5475, -75.466, 1500),
+    )
+
+    precise = Coords(
+        lat=35.547, lng=-75.466,
+        source="overpass",
+        matched_query="The Farrow Community Beach Footbridge",
+        canonical_name="Farrow Community Beach Footbridge",
+        is_approximate=False,
+    )
+
+    with patch.object(
+        resolver_mod.overpass, "lookup",
+        AsyncMock(return_value=precise),
+    ):
+        coords = await resolve(place, providers=[miss])
+
+    assert coords is not None
+    assert coords.source == "overpass"
+    assert coords.is_approximate is False
+    assert abs(coords.lat - 35.547) < 0.001
+
+
+@pytest.mark.asyncio
+async def test_resolve_skips_overpass_without_hint_coords():
+    """無 vision 粗座標就不該打 Overpass(避免全 DB 掃描)。"""
+    miss = _FakeProvider("miss", _miss)
+    place = PlaceCandidates(candidates=["X"], country="USA")
+    mock_overpass = AsyncMock()
+    with patch.object(resolver_mod.overpass, "lookup", mock_overpass):
+        with patch.object(
+            resolver_mod, "llm_final_reasoning", AsyncMock(return_value=None),
+        ):
+            await resolve(place, providers=[miss])
+    mock_overpass.assert_not_called()
+
+
 def test_sanity_threshold_scales_with_accuracy():
     """Vision 越有信心(accuracy_m 越小),距離門檻越嚴。"""
     from src.resolver import _sanity_threshold_m
