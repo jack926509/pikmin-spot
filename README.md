@@ -180,55 +180,46 @@ KPI:**識別率 ≥ 90%**(18/20)、**單次回應 < 12 秒**。
 
 ---
 
-## v3 — Wayspot 識別擴充
+## 識別流程
 
-### 為什麼需要
+每張截圖會跑下面五步,任一步命中就直接回覆使用者:
 
-Pikmin Bloom 的菇點(Wayspot)來自 Niantic Wayfarer 玩家提名系統,**大量是社區小景點**(社區木橋、塗鴉、紀念碑、教堂門牌等),其中:
-- 約 40~60% 不在 Wikipedia
-- 約 30~50% 不在 OSM
+```
+截圖
+ │
+ ▼
+① Vision    OpenAI 從畫面抽:候選名 × 1-3、國家、地區、附近錨點、粗座標猜測
+ │
+ ▼
+② 查詢生成  針對每個候選名展開多條 query:
+            • 「Name, Region, Country」、「Name, Country」、純 Name
+            • 冠詞剝除:「The Farrow Footbridge」→「Farrow Footbridge」
+            • 核心名抽取:「The Farrow Community Beach Footbridge」→「Farrow」
+            • Anchor 直查:附近城鎮/街道
+            • 行政區 fallback:「Salvo, North Carolina」
+ │
+ ▼
+③ 級聯解析  每條 query 平行打 4 個資料庫,任一回有座標就回:
+            Wikidata → Wikipedia(多語 ja/zh/ko/...) → Nominatim → Photon
+            • 國家過濾:依 ISO code 排除回錯國家的同名地標
+            • 距離校驗:若離 Vision 粗座標 > 1500km 視為誤匹配
+ │
+ ▼  (全 miss)
+④ AI 推理   把 Vision 線索 + 沿途蒐集到的 anchor 座標一起餵 LLM,
+            推理出近似 GPS(±300m / ±1500m / 區域估計)
+ │
+ ▼  (LLM 也放棄)
+⑤ 回報「查不到」
+```
 
-v2 的四層級聯(Wikidata/Wikipedia/Nominatim/Photon)全部依賴「該地標已被權威/開源 DB 登錄」,對這類 Wayspot 全 miss。
+**識別精度標籤**(訊息中明確標示):
+- 精確:來自 Wikidata/Wikipedia/OSM,通常 < 50m
+- 高精度(±300m):AI 推理出街道級
+- 中精度(±1500m):AI 推理出鎮級
+- 區域估計:AI 只能定到城市/區域
 
-### 新增能力
-
-#### 1. LLM Final Reasoning 推理層(`src/llm_rerank.py`)
-cascade 全 miss 時,把 Vision 識別結果 + 各 provider 留下的 anchor 座標 + Vision 自帶粗座標,**整體丟給 LLM 做推理**。
-
-例:對「The Farrow Community Beach Footbridge」,即使橋本體找不到,但鎮中心(Salvo, NC)與街道(Farrow Drive)的座標仍會被蒐集,LLM 推理後可得 ±1500m 精度的近似座標。
-
-#### 2. Vision Prompt v3
-教 LLM 辨識「這是 Wayspot 而不是 Wikipedia 級地標」,並主動提供:
-- `anchor_locations`:附近錨點
-- `approximate_coords_guess`:LLM 對該區域的訓練資料知識
-- `is_likely_wayspot_only`:自評旗標
-
-#### 3. Resolver 智能 query 生成
-新增冠詞剝除、核心名抽取、anchor 直查、行政區 fallback 四種 query 變體。
-平行查詢時,優先序較低的命中會被蒐集為 `anchor_coords` 供 rerank 使用。
-
-#### 4. 精度透明化
-所有 approximate 座標都會在訊息中明確標示:
-- 高精度(±300m 以下)
-- 中精度(±1500m 以下)
-- 區域估計(±1500m 以上)
-
-且資料來源會顯示為「AI 推理(線索整合)」而非英文 `llm_rerank`。
-
-### 預期 KPI
-
-- 識別率:90% → **95%**
-- 月成本:仍 < USD $1(僅 cascade miss 時觸發第二次 LLM 呼叫,額外 +$0.02~$0.05/月)
-- 不增加任何必填 env var(復用既有 `OPENAI_API_KEY`)
-- 不增加任何外部依賴
-
-### 開發階段對照
-
-| Phase | 動作 | 檔案 |
-|---|---|---|
-| A | Models 升級 | `src/models.py` |
-| B | Vision Prompt v3 | `src/vision.py` |
-| C | LLM Rerank 模組 | `src/llm_rerank.py`(新) |
-| D | Resolver 升級 | `src/resolver.py` |
-| E | Formatter 升級 | `src/formatter.py` |
-| F | README + 整合驗收 | 本文件 |
+**設計重點**:
+- 4 個資料庫平行查、首中即返回,單張截圖 SLA < 12 秒
+- 社區小景點(不在 Wikipedia/OSM 的 Wayspot)由 AI 推理層補位
+- 多語言友善:日/中/韓文名稱自動切對應語言 wiki
+- 失敗安全:每層 timeout + 例外吞掉,不會整流程崩
