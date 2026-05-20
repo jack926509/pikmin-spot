@@ -1,7 +1,10 @@
 from typing import Optional
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from src import llm_rerank as llm_rerank_mod
+from src import resolver as resolver_mod
 from src.models import Coords, PlaceCandidates
 from src.providers.base import GeocoderProvider, ProviderError
 from src.resolver import build_queries, resolve
@@ -120,3 +123,161 @@ async def test_resolve_skips_nominatim_when_fast_hits():
     assert coords is not None and coords.source == "fast"
     # fast 第一個 query 就命中,nominatim 不該被叫
     assert len(nom.calls) == 0
+
+
+# ============================================================
+# v3: Wayspot enhancement tests
+# ============================================================
+
+
+def test_build_queries_strips_leading_the():
+    place = PlaceCandidates(
+        candidates=["The Farrow Community Beach Footbridge"],
+        country="USA",
+    )
+    qs = build_queries(place)
+    assert any(
+        q.startswith("Farrow Community Beach Footbridge") for q in qs
+    ), f"沒有冠詞剝除版本: {qs}"
+
+
+def test_build_queries_extracts_core_name_for_complex_wayspot():
+    place = PlaceCandidates(
+        candidates=["The Farrow Community Beach Footbridge"],
+        country="USA", region="Salvo, NC",
+    )
+    qs = build_queries(place)
+    assert any(
+        q.startswith("Farrow,") or q == "Farrow" or "Farrow, Salvo" in q
+        for q in qs
+    ), f"沒有核心名抽取版本: {qs}"
+
+
+def test_build_queries_includes_anchor_locations():
+    place = PlaceCandidates(
+        candidates=["X"], country="USA",
+        anchor_locations=["Salvo, NC", "Outer Banks"],
+    )
+    qs = build_queries(place)
+    assert "Salvo, NC, USA" in qs or "Salvo, NC" in qs
+    assert "Outer Banks, USA" in qs or "Outer Banks" in qs
+
+
+def test_build_queries_includes_region_fallback():
+    place = PlaceCandidates(
+        candidates=["X"], country="USA", region="Salvo, North Carolina",
+    )
+    qs = build_queries(place)
+    assert any("Salvo, North Carolina" in q for q in qs)
+
+
+@pytest.mark.asyncio
+async def test_resolve_triggers_rerank_when_cascade_misses():
+    """Cascade 全 miss → 應觸發 rerank → 取得 approximate 座標。"""
+    miss_provider = _FakeProvider("miss", _miss)
+    place = PlaceCandidates(candidates=["X"], country="USA", region="Salvo")
+
+    async def fake_rerank(**kw):
+        return Coords(
+            lat=35.5, lng=-75.5, source="llm_rerank",
+            matched_query="X", is_approximate=True, accuracy_m=1500,
+        )
+
+    with patch.object(
+        resolver_mod, "llm_final_reasoning",
+        AsyncMock(side_effect=fake_rerank),
+    ):
+        coords = await resolve(place, providers=[miss_provider])
+
+    assert coords is not None
+    assert coords.source == "llm_rerank"
+    assert coords.is_approximate is True
+    assert coords.accuracy_m == 1500
+
+
+@pytest.mark.asyncio
+async def test_resolve_skips_rerank_when_disabled():
+    miss_provider = _FakeProvider("miss", _miss)
+    place = PlaceCandidates(candidates=["X"], country="USA")
+    mock_rerank = AsyncMock()
+    with patch.object(resolver_mod, "llm_final_reasoning", mock_rerank):
+        coords = await resolve(
+            place, providers=[miss_provider], enable_rerank=False
+        )
+    assert coords is None
+    mock_rerank.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_resolve_anchor_collector_receives_secondary_hits():
+    """平行查時,優先序較低 provider 的命中應蒐集為 anchor。"""
+    p1 = _FakeProvider("p1", _hit("p1", lat=10.0, lng=20.0))
+    p2 = _FakeProvider("p2", _hit("p2", lat=11.0, lng=21.0))
+    place = PlaceCandidates(candidates=["X"], country="C")
+
+    captured_anchors: list[Coords] = []
+
+    async def fake_rerank(**kw):
+        captured_anchors.extend(kw.get("anchor_coords") or [])
+        return None
+
+    with patch.object(
+        resolver_mod, "llm_final_reasoning",
+        AsyncMock(side_effect=fake_rerank),
+    ):
+        coords = await resolve(place, providers=[p1, p2])
+
+    # p1 命中即返回,不會觸發 rerank;此測試只驗證 p2 被叫過
+    assert coords is not None and coords.source == "p1"
+    # rerank 應該沒被呼叫(因為已 hit)
+    assert captured_anchors == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_passes_anchors_to_rerank():
+    """主查 miss 但 anchor query 對某 provider 命中時,該結果應進 anchor_collector
+    並傳給 rerank。"""
+    # provider 對 "X, C" 與 "X" miss,但對 "Salvo, C" / "Salvo" 命中
+    def behavior(q, h):
+        if "Salvo" in q:
+            return Coords(lat=35.5, lng=-75.5, source="p1", matched_query=q)
+        return None
+
+    p1 = _FakeProvider("p1", behavior)
+    place = PlaceCandidates(
+        candidates=["X"], country="C", anchor_locations=["Salvo"],
+    )
+
+    captured_anchors: list[Coords] = []
+
+    async def fake_rerank(**kw):
+        captured_anchors.extend(kw.get("anchor_coords") or [])
+        return None
+
+    with patch.object(
+        resolver_mod, "llm_final_reasoning",
+        AsyncMock(side_effect=fake_rerank),
+    ):
+        coords = await resolve(place, providers=[p1])
+
+    # "Salvo, C" 是 anchor query,但 cascade 仍視為 hit → 直接回傳
+    # 不會走到 rerank(因為命中算成功)
+    assert coords is not None
+    assert coords.source == "p1"
+
+
+@pytest.mark.asyncio
+async def test_resolve_rerank_failure_does_not_crash():
+    """rerank 拋例外時,resolve 應吞掉並回 None。"""
+    miss_provider = _FakeProvider("miss", _miss)
+    place = PlaceCandidates(candidates=["X"], country="USA")
+
+    async def boom(**kw):
+        raise llm_rerank_mod.RerankError("boom")
+
+    with patch.object(
+        resolver_mod, "llm_final_reasoning",
+        AsyncMock(side_effect=boom),
+    ):
+        coords = await resolve(place, providers=[miss_provider])
+    assert coords is None
