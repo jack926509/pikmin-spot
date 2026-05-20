@@ -91,3 +91,24 @@ def test_in_flight_release_unknown_is_noop():
     s = InFlightSet()
     s.release("never-acquired")  # should not raise
     assert len(s) == 0
+
+
+def test_in_flight_ttl_auto_releases_stale_entry():
+    """模擬 handler 崩潰未呼叫 release —— TTL 過後自動清理,允許再次 acquire。"""
+    s = InFlightSet(ttl_sec=0.05)
+    assert s.acquire("F1") is True
+    assert s.acquire("F1") is False  # 仍 in-flight
+    import time as _t
+    _t.sleep(0.07)
+    # TTL 過後應允許再 acquire(自動 GC)
+    assert s.acquire("F1") is True
+
+
+def test_in_flight_membership_check_triggers_gc():
+    s = InFlightSet(ttl_sec=0.05)
+    s.acquire("F1")
+    assert "F1" in s
+    import time as _t
+    _t.sleep(0.07)
+    assert "F1" not in s
+    assert len(s) == 0

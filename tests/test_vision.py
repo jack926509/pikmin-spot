@@ -106,6 +106,30 @@ async def test_identify_place_rejects_out_of_range_coords_guess():
 
 
 @pytest.mark.asyncio
+async def test_identify_place_retries_once_on_transient_error():
+    """第一次失敗,第二次成功 —— 應回正確結果而非拋例外。"""
+    good = _mock_response({"candidates": ["X"], "country": "C"})
+    side_effects = [RuntimeError("transient blip"), good]
+    fake = _fake_client(side_effect=side_effects)
+    with patch.object(vision, "_get_client", return_value=fake):
+        with patch.object(vision, "VISION_RETRY_BACKOFF_SEC", 0):
+            place = await vision.identify_place(b"img")
+    assert place.candidates == ["X"]
+    assert fake.chat.completions.create.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_identify_place_raises_after_all_retries_exhausted():
+    """兩次都失敗 —— 應拋 VisionError。"""
+    fake = _fake_client(side_effect=RuntimeError("persistent"))
+    with patch.object(vision, "_get_client", return_value=fake):
+        with patch.object(vision, "VISION_RETRY_BACKOFF_SEC", 0):
+            with pytest.raises(vision.VisionError):
+                await vision.identify_place(b"img")
+    assert fake.chat.completions.create.await_count == 2
+
+
+@pytest.mark.asyncio
 async def test_identify_place_backward_compatible_old_schema():
     """v2 格式(沒有 anchor/is_wayspot/coords_guess)應正常解析。"""
     resp = _mock_response({

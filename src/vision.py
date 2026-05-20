@@ -22,6 +22,8 @@ from src.models import PlaceCandidates
 log = get_logger(__name__)
 
 VISION_TIMEOUT_SEC = 30
+VISION_RETRY_ATTEMPTS = 2  # 第一次失敗後重試一次,防偶發網路/上游抖動
+VISION_RETRY_BACKOFF_SEC = 1.5
 
 PROMPT = """You are an expert at identifying real-world landmarks from Pikmin Bloom mushroom point screenshots.
 
@@ -199,33 +201,50 @@ async def identify_place(image_bytes: bytes) -> PlaceCandidates:
     client = _get_client()
     b64 = base64.b64encode(image_bytes).decode("ascii")
 
-    try:
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=settings.LLM_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": PROMPT},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{b64}"
+    last_exc: Optional[Exception] = None
+    response = None
+    for attempt in range(VISION_RETRY_ATTEMPTS):
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=settings.LLM_MODEL,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": PROMPT},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{b64}"
+                                    },
                                 },
-                            },
-                        ],
-                    }
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1,
-            ),
-            timeout=VISION_TIMEOUT_SEC,
-        )
-    except asyncio.TimeoutError as e:
-        raise VisionError(f"OpenAI timeout after {VISION_TIMEOUT_SEC}s") from e
-    except Exception as e:
-        raise VisionError(f"OpenAI call failed: {type(e).__name__}") from e
+                            ],
+                        }
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.1,
+                ),
+                timeout=VISION_TIMEOUT_SEC,
+            )
+            break
+        except asyncio.TimeoutError as e:
+            last_exc = VisionError(f"OpenAI timeout after {VISION_TIMEOUT_SEC}s")
+            last_exc.__cause__ = e
+        except Exception as e:
+            last_exc = VisionError(f"OpenAI call failed: {type(e).__name__}")
+            last_exc.__cause__ = e
+        if attempt < VISION_RETRY_ATTEMPTS - 1:
+            log.warning(
+                "vision attempt failed, retrying",
+                attempt=attempt + 1,
+                error=str(last_exc),
+            )
+            await asyncio.sleep(VISION_RETRY_BACKOFF_SEC)
+
+    if response is None:
+        assert last_exc is not None
+        raise last_exc
 
     raw = (response.choices[0].message.content or "").strip()
     if raw.startswith("```"):

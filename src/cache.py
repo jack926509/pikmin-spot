@@ -1,10 +1,12 @@
 import hashlib
+import time
 from collections import OrderedDict
 from typing import Optional, Tuple
 
 from src.models import Coords, PlaceCandidates
 
 _MAX_ENTRIES = 512
+_IN_FLIGHT_TTL_SEC = 300.0  # 5 min;超時自動清理避免 stuck task 永遠卡住 file_id
 
 
 class LRUResultCache:
@@ -42,25 +44,41 @@ class LRUResultCache:
 
 class InFlightSet:
     """簡單去重集合,防止同一 Slack file 被多個事件(message + file_shared)
-    重覆觸發識別管線。"""
+    重覆觸發識別管線。
 
-    def __init__(self) -> None:
-        self._set: set[str] = set()
+    v3.1:加 TTL —— 若 handler 因任何理由未呼叫 release(進程崩潰、卡住),
+    entry 在 TTL 後自動失效,避免永遠卡住該 file_id。
+    """
+
+    def __init__(self, ttl_sec: float = _IN_FLIGHT_TTL_SEC) -> None:
+        self._data: dict[str, float] = {}  # key -> expiry monotonic ts
+        self._ttl = ttl_sec
+
+    def _gc(self) -> None:
+        now = time.monotonic()
+        stale = [k for k, exp in self._data.items() if exp <= now]
+        for k in stale:
+            self._data.pop(k, None)
 
     def acquire(self, key: str) -> bool:
-        if not key or key in self._set:
+        if not key:
             return False
-        self._set.add(key)
+        self._gc()
+        if key in self._data:
+            return False
+        self._data[key] = time.monotonic() + self._ttl
         return True
 
     def release(self, key: str) -> None:
-        self._set.discard(key)
+        self._data.pop(key, None)
 
     def __contains__(self, key: str) -> bool:
-        return key in self._set
+        self._gc()
+        return key in self._data
 
     def __len__(self) -> int:
-        return len(self._set)
+        self._gc()
+        return len(self._data)
 
 
 image_cache = LRUResultCache()
