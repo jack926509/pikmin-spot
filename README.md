@@ -177,3 +177,58 @@ pikmin-spot/
 由於核心識別管線未動,Telegram 版的識別率驗收結果直接適用。請於 Slack 部署後再跑一次回歸測試。
 
 KPI:**識別率 ≥ 90%**(18/20)、**單次回應 < 12 秒**。
+
+---
+
+## v3 — Wayspot 識別擴充
+
+### 為什麼需要
+
+Pikmin Bloom 的菇點(Wayspot)來自 Niantic Wayfarer 玩家提名系統,**大量是社區小景點**(社區木橋、塗鴉、紀念碑、教堂門牌等),其中:
+- 約 40~60% 不在 Wikipedia
+- 約 30~50% 不在 OSM
+
+v2 的四層級聯(Wikidata/Wikipedia/Nominatim/Photon)全部依賴「該地標已被權威/開源 DB 登錄」,對這類 Wayspot 全 miss。
+
+### 新增能力
+
+#### 1. LLM Final Reasoning 推理層(`src/llm_rerank.py`)
+cascade 全 miss 時,把 Vision 識別結果 + 各 provider 留下的 anchor 座標 + Vision 自帶粗座標,**整體丟給 LLM 做推理**。
+
+例:對「The Farrow Community Beach Footbridge」,即使橋本體找不到,但鎮中心(Salvo, NC)與街道(Farrow Drive)的座標仍會被蒐集,LLM 推理後可得 ±1500m 精度的近似座標。
+
+#### 2. Vision Prompt v3
+教 LLM 辨識「這是 Wayspot 而不是 Wikipedia 級地標」,並主動提供:
+- `anchor_locations`:附近錨點
+- `approximate_coords_guess`:LLM 對該區域的訓練資料知識
+- `is_likely_wayspot_only`:自評旗標
+
+#### 3. Resolver 智能 query 生成
+新增冠詞剝除、核心名抽取、anchor 直查、行政區 fallback 四種 query 變體。
+平行查詢時,優先序較低的命中會被蒐集為 `anchor_coords` 供 rerank 使用。
+
+#### 4. 精度透明化
+所有 approximate 座標都會在訊息中明確標示:
+- 高精度(±300m 以下)
+- 中精度(±1500m 以下)
+- 區域估計(±1500m 以上)
+
+且資料來源會顯示為「AI 推理(線索整合)」而非英文 `llm_rerank`。
+
+### 預期 KPI
+
+- 識別率:90% → **95%**
+- 月成本:仍 < USD $1(僅 cascade miss 時觸發第二次 LLM 呼叫,額外 +$0.02~$0.05/月)
+- 不增加任何必填 env var(復用既有 `OPENAI_API_KEY`)
+- 不增加任何外部依賴
+
+### 開發階段對照
+
+| Phase | 動作 | 檔案 |
+|---|---|---|
+| A | Models 升級 | `src/models.py` |
+| B | Vision Prompt v3 | `src/vision.py` |
+| C | LLM Rerank 模組 | `src/llm_rerank.py`(新) |
+| D | Resolver 升級 | `src/resolver.py` |
+| E | Formatter 升級 | `src/formatter.py` |
+| F | README + 整合驗收 | 本文件 |

@@ -76,3 +76,45 @@ async def test_identify_place_raises_on_llm_failure():
     with patch.object(vision, "_get_client", return_value=fake):
         with pytest.raises(vision.VisionError):
             await vision.identify_place(b"img")
+
+
+@pytest.mark.asyncio
+async def test_identify_place_parses_v3_fields():
+    resp = _mock_response({
+        "candidates": ["X"],
+        "country": "C", "region": "R",
+        "anchor_locations": ["A1", "A2"],
+        "is_likely_wayspot_only": True,
+        "approximate_coords_guess": {"lat": 1.5, "lng": 2.5, "accuracy_m": 500},
+    })
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
+        place = await vision.identify_place(b"img")
+    assert place.anchor_locations == ["A1", "A2"]
+    assert place.is_likely_wayspot_only is True
+    assert place.approximate_coords_guess == (1.5, 2.5, 500)
+
+
+@pytest.mark.asyncio
+async def test_identify_place_rejects_out_of_range_coords_guess():
+    resp = _mock_response({
+        "candidates": ["X"],
+        "approximate_coords_guess": {"lat": 200, "lng": 0, "accuracy_m": 100},
+    })
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
+        place = await vision.identify_place(b"img")
+    assert place.approximate_coords_guess is None
+
+
+@pytest.mark.asyncio
+async def test_identify_place_backward_compatible_old_schema():
+    """v2 格式(沒有 anchor/is_wayspot/coords_guess)應正常解析。"""
+    resp = _mock_response({
+        "candidates": ["X"],
+        "country": "C",
+    })
+    with patch.object(vision, "_get_client", return_value=_fake_client(resp)):
+        place = await vision.identify_place(b"img")
+    assert place.candidates == ["X"]
+    assert place.anchor_locations == []
+    assert place.is_likely_wayspot_only is False
+    assert place.approximate_coords_guess is None

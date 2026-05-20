@@ -4,6 +4,7 @@ import httpx
 
 from src.logger import get_logger
 from src.models import Coords
+from src.providers._geo import country_to_cc
 from src.providers.base import (
     HTTP_TIMEOUT_SEC,
     USER_AGENT,
@@ -23,7 +24,8 @@ class PhotonProvider(GeocoderProvider):
     async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
         if not query.strip():
             return None
-        params = {"q": query, "limit": 1, "lang": "en"}
+        params: dict = {"q": query, "limit": 5, "lang": "en"}
+        cc = country_to_cc(hint_country)
         try:
             async with httpx.AsyncClient(
                 timeout=HTTP_TIMEOUT_SEC,
@@ -37,14 +39,17 @@ class PhotonProvider(GeocoderProvider):
         features = data.get("features") or []
         if not features:
             return None
-        feat = features[0]
+
+        chosen = self._pick_best(features, cc)
+        if not chosen:
+            return None
         try:
-            lng, lat = feat["geometry"]["coordinates"][:2]
+            lng, lat = chosen["geometry"]["coordinates"][:2]
             lat = float(lat)
             lng = float(lng)
         except (KeyError, TypeError, ValueError, IndexError):
             return None
-        canonical = (feat.get("properties") or {}).get("name")
+        canonical = (chosen.get("properties") or {}).get("name")
         return Coords(
             lat=lat,
             lng=lng,
@@ -52,6 +57,19 @@ class PhotonProvider(GeocoderProvider):
             matched_query=query,
             canonical_name=canonical,
         )
+
+    def _pick_best(
+        self, features: list[dict], expected_cc: Optional[str]
+    ) -> Optional[dict]:
+        if not features:
+            return None
+        if expected_cc:
+            for f in features:
+                props = f.get("properties") or {}
+                fcc = (props.get("countrycode") or "").lower()
+                if fcc == expected_cc:
+                    return f
+        return features[0]
 
 
 photon = PhotonProvider()

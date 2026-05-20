@@ -25,6 +25,18 @@ def _location_line(place: PlaceCandidates) -> str:
     return " · ".join(parts)
 
 
+def _accuracy_label(coords: Coords) -> str:
+    """根據 is_approximate 與 accuracy_m 給人類可讀的精度標籤。"""
+    if not coords.is_approximate:
+        return "精確"
+    acc = coords.accuracy_m or 2000
+    if acc < 300:
+        return f"高精度(±{acc}m)"
+    if acc < 1500:
+        return f"中精度(±{acc}m)"
+    return f"區域估計(±{acc}m)"
+
+
 def format_success(place: PlaceCandidates, coords: Coords) -> str:
     name = place.candidates[0] if place.candidates else (coords.canonical_name or "Unknown")
     loc_line = _location_line(place)
@@ -35,12 +47,24 @@ def format_success(place: PlaceCandidates, coords: Coords) -> str:
     if loc_line:
         lines.append(f"🌏 {_escape_mrkdwn(loc_line)}")
     lines.append("")
-    lines.append(f"🎯 `{coords.lat:.6f}, {coords.lng:.6f}`")
+
+    if coords.is_approximate:
+        lines.append(f"🎯 `{coords.lat:.6f}, {coords.lng:.6f}` _(大致位置)_")
+        lines.append(
+            f"⚠️ 找不到此地標的精確登錄,以下為推估:_{_accuracy_label(coords)}_"
+        )
+    else:
+        lines.append(f"🎯 `{coords.lat:.6f}, {coords.lng:.6f}`")
+
     if place.description:
         lines.append("")
         lines.append(f"📝 {_escape_mrkdwn(place.description)}")
     lines.append("")
-    lines.append(f"_資料來源:{coords.source} · 信心度:{place.confidence}_")
+
+    src_label = coords.source
+    if coords.source == "llm_rerank":
+        src_label = "AI 推理(線索整合)"
+    lines.append(f"_資料來源:{src_label} · 信心度:{place.confidence}_")
     return "\n".join(lines)
 
 
