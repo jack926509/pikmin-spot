@@ -137,3 +137,39 @@ def test_format_success_omits_approximate_warning_when_exact():
     out = format_success(place, coords)
     assert "大致位置" not in out
     assert "推估" not in out
+
+
+def test_success_blocks_includes_apple_maps_button():
+    place = PlaceCandidates(candidates=["X"], country="C")
+    coords = Coords(lat=1.0, lng=2.0, source="wikidata", matched_query="x")
+    blocks = success_blocks(place, coords)
+    actions = next(b for b in blocks if b["type"] == "actions")
+    urls = [e["url"] for e in actions["elements"]]
+    assert any("maps.apple.com" in u for u in urls)
+    assert any("google.com/maps" in u for u in urls)
+    assert any("openstreetmap.org" in u for u in urls)
+
+
+def test_success_blocks_prepends_mention_when_user_provided():
+    place = PlaceCandidates(candidates=["X"], country="C")
+    coords = Coords(lat=1.0, lng=2.0, source="x", matched_query="x")
+    blocks = success_blocks(place, coords, mention_user="U123")
+    body = blocks[0]["text"]["text"]
+    assert body.startswith("<@U123>")
+
+
+def test_success_blocks_omits_mention_when_user_none():
+    place = PlaceCandidates(candidates=["X"], country="C")
+    coords = Coords(lat=1.0, lng=2.0, source="x", matched_query="x")
+    blocks = success_blocks(place, coords, mention_user=None)
+    body = blocks[0]["text"]["text"]
+    assert "<@" not in body
+
+
+def test_no_coords_blocks_includes_wikipedia_button():
+    place = PlaceCandidates(candidates=["Mystery"], country="Nowhere")
+    blocks = no_coords_blocks(place)
+    actions = next(b for b in blocks if b["type"] == "actions")
+    urls = [e["url"] for e in actions["elements"]]
+    assert any("wikipedia.org" in u for u in urls)
+    assert any("google.com/search" in u for u in urls)
