@@ -21,11 +21,23 @@ API_URL = "https://photon.komoot.io/api"
 class PhotonProvider(GeocoderProvider):
     name = "photon"
 
-    async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
+    async def lookup(
+        self,
+        query: str,
+        hint_country: str = "",
+        hint_coords: Optional[tuple[float, float, int]] = None,
+    ) -> Optional[Coords]:
         if not query.strip():
             return None
         params: dict = {"q": query, "limit": 5, "lang": "en"}
         cc = country_to_cc(hint_country)
+        # 地理偏置 —— 若 vision 提供粗座標,Photon 大幅優先返回該區域結果。
+        # location_bias_scale 0.1 偏強(範圍 0.1~10,越小偏置越強)。
+        if hint_coords:
+            lat, lng, _ = hint_coords
+            params["lat"] = lat
+            params["lon"] = lng
+            params["location_bias_scale"] = 0.1
         try:
             async with httpx.AsyncClient(
                 timeout=HTTP_TIMEOUT_SEC,

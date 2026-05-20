@@ -16,7 +16,12 @@ class _FakeProvider(GeocoderProvider):
         self._behavior = behavior
         self.calls: list[tuple[str, str]] = []
 
-    async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
+    async def lookup(
+        self,
+        query: str,
+        hint_country: str = "",
+        hint_coords: Optional[tuple[float, float, int]] = None,
+    ) -> Optional[Coords]:
         self.calls.append((query, hint_country))
         return self._behavior(query, hint_country)
 
@@ -308,6 +313,53 @@ async def test_resolve_accepts_near_hit_when_vision_has_coords_guess():
     coords = await resolve(place, providers=[near_provider], enable_rerank=False)
     assert coords is not None
     assert coords.source == "near"
+
+
+@pytest.mark.asyncio
+async def test_resolve_rejects_farrow_footbridge_regression():
+    """還原 PR#6 後實測 case:Farrow Footbridge (NC) 不該幾到 NH/ME 海岸。
+
+    Vision 給 (35.547, -75.466) ±1500m,Photon 返回 (43.262, -70.588) =
+    距離 ~920km。1500m × 100 = 150km threshold → 應拒絕並轉 anchor。
+    """
+    bad_photon = _FakeProvider(
+        "photon",
+        _hit("photon", lat=43.262806, lng=-70.588705),
+    )
+    place = PlaceCandidates(
+        candidates=["The Farrow Community Beach Footbridge"],
+        country="United States",
+        region="Salvo, North Carolina",
+        approximate_coords_guess=(35.5475, -75.466, 1500),
+    )
+
+    captured_anchors: list[Coords] = []
+
+    async def fake_rerank(**kw):
+        captured_anchors.extend(kw.get("anchor_coords") or [])
+        return None
+
+    with patch.object(
+        resolver_mod, "llm_final_reasoning",
+        AsyncMock(side_effect=fake_rerank),
+    ):
+        coords = await resolve(place, providers=[bad_photon])
+
+    # 不該返回離 920km 的錯誤結果
+    assert coords is None
+    # 錯誤命中應保留為 anchor 給 rerank
+    assert any(c.source == "photon" for c in captured_anchors)
+
+
+def test_sanity_threshold_scales_with_accuracy():
+    """Vision 越有信心(accuracy_m 越小),距離門檻越嚴。"""
+    from src.resolver import _sanity_threshold_m
+    # 街級信心 → 100m × 100 = 10km,但底線是 50km
+    assert _sanity_threshold_m(100) == 50_000
+    # 鎮級信心 → 2000m × 100 = 200km
+    assert _sanity_threshold_m(2000) == 200_000
+    # 不確定 → 上限 1500km
+    assert _sanity_threshold_m(100_000) == 1_500_000
 
 
 @pytest.mark.asyncio

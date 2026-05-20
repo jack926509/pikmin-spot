@@ -24,7 +24,12 @@ _rate_lock = asyncio.Lock()
 class NominatimProvider(GeocoderProvider):
     name = "nominatim"
 
-    async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
+    async def lookup(
+        self,
+        query: str,
+        hint_country: str = "",
+        hint_coords: Optional[tuple[float, float, int]] = None,
+    ) -> Optional[Coords]:
         if not query.strip():
             return None
         params: dict = {
@@ -45,6 +50,22 @@ class NominatimProvider(GeocoderProvider):
             params["accept-language"] = "ko,en"
         else:
             params["accept-language"] = "en"
+        # 地理偏置 —— 若有粗座標,給一個 viewbox 軟性偏好(bounded=0)。
+        # 半徑取 max(50km, accuracy_m × 50) 換算成緯度/經度度數。
+        if hint_coords:
+            lat, lng, acc_m = hint_coords
+            radius_m = max(50_000, acc_m * 50)
+            lat_delta = radius_m / 111_000.0
+            # 經度每度長度 = 111 km × cos(緯度)
+            import math
+            cos_lat = max(0.1, math.cos(math.radians(lat)))
+            lng_delta = radius_m / (111_000.0 * cos_lat)
+            # viewbox 順序:left,top,right,bottom (即 west,north,east,south)
+            params["viewbox"] = (
+                f"{lng - lng_delta},{lat + lat_delta},"
+                f"{lng + lng_delta},{lat - lat_delta}"
+            )
+            params["bounded"] = 0  # soft bias,不強制限制
 
         async with _rate_lock:
             try:
