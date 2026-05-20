@@ -17,6 +17,7 @@ from src.models import Coords, PlaceCandidates
 from src.providers._geo import haversine_m
 from src.providers.base import GeocoderProvider, ProviderError
 from src.providers.nominatim import nominatim
+from src.providers.overpass import overpass
 from src.providers.photon import photon
 from src.providers.wikidata import wikidata
 from src.providers.wikipedia import wikipedia
@@ -26,9 +27,17 @@ log = get_logger(__name__)
 DEFAULT_PROVIDERS: list[GeocoderProvider] = [wikidata, wikipedia, nominatim, photon]
 SLOW_PROVIDER_NAMES = {"nominatim"}  # 受 1 req/sec 限速;僅作為 fallback
 
-# 若 vision 給了粗座標,離 vision guess 超過此距離的命中視為錯誤匹配。
-# 1500km ≈ 兩個鄰國的最大距離,足以容忍 vision 的區域猜測誤差。
-_SANITY_MAX_DISTANCE_M = 1_500_000
+# 距離校驗:依 vision 對自身猜測的信心度動態縮放。
+# vision 信心高(accuracy_m 小)→ 嚴格門檻;信心低 → 放寬。
+# 公式:threshold = clamp(accuracy_m × 100, 50km, 1500km)
+# 例:accuracy_m=200(街級) → 50km;accuracy_m=2000(鎮級) → 200km;
+#     accuracy_m=20000(城市) → 1500km(上限)。
+_SANITY_MIN_M = 50_000
+_SANITY_MAX_M = 1_500_000
+
+
+def _sanity_threshold_m(accuracy_m: int) -> int:
+    return max(_SANITY_MIN_M, min(_SANITY_MAX_M, accuracy_m * 100))
 
 # 通用詞 stopword:抽核心名時要剝掉
 _GENERIC_TOKENS = {
@@ -134,11 +143,14 @@ def build_queries(place: PlaceCandidates) -> list[str]:
 
 
 async def _safe_lookup(
-    provider: GeocoderProvider, query: str, hint_country: str
+    provider: GeocoderProvider,
+    query: str,
+    hint_country: str,
+    hint_coords: Optional[tuple[float, float, int]] = None,
 ) -> Optional[Coords]:
     """provider.lookup 的非拋出版本,錯誤吃掉並 log。"""
     try:
-        return await provider.lookup(query, hint_country)
+        return await provider.lookup(query, hint_country, hint_coords)
     except asyncio.CancelledError:
         raise
     except ProviderError as e:
@@ -158,13 +170,15 @@ async def _parallel_first_hit(
     query: str,
     hint_country: str,
     anchor_collector: Optional[list[Coords]] = None,
+    hint_coords: Optional[tuple[float, float, int]] = None,
 ) -> Optional[Coords]:
     """同時 fire 一組 fast providers,依優先序回傳第一個 non-None。
     新增:把次優結果也蒐集進 anchor_collector(若提供),供 rerank 用。"""
     if not providers:
         return None
     tasks = [
-        asyncio.create_task(_safe_lookup(p, query, hint_country)) for p in providers
+        asyncio.create_task(_safe_lookup(p, query, hint_country, hint_coords))
+        for p in providers
     ]
     hit: Optional[Coords] = None
     try:
@@ -192,16 +206,18 @@ async def _parallel_first_hit(
 
 def _is_sane(coords: Coords, place: PlaceCandidates) -> bool:
     """若 vision 提供 approximate_coords_guess,檢查結果是否在合理距離內。
-    超過 1500km 視為錯誤匹配(例如同名地點在另一國)。"""
+    閾值依 accuracy_m 動態縮放(vision 越有信心,門檻越嚴)。"""
     if not place.approximate_coords_guess:
         return True
-    glat, glng, _ = place.approximate_coords_guess
+    glat, glng, acc_m = place.approximate_coords_guess
+    threshold = _sanity_threshold_m(acc_m)
     dist = haversine_m(coords.lat, coords.lng, glat, glng)
-    if dist > _SANITY_MAX_DISTANCE_M:
+    if dist > threshold:
         log.info(
             "resolve: reject far hit",
             source=coords.source,
             distance_km=int(dist / 1000),
+            threshold_km=int(threshold / 1000),
             matched_query=coords.matched_query,
         )
         return False
@@ -232,10 +248,13 @@ async def resolve(
     slow = [p for p in providers if p.name in SLOW_PROVIDER_NAMES]
 
     anchor_coords: list[Coords] = []
+    hint_coords = place.approximate_coords_guess
 
     for q in queries:
         result = await _parallel_first_hit(
-            fast, q, place.country, anchor_collector=anchor_coords
+            fast, q, place.country,
+            anchor_collector=anchor_coords,
+            hint_coords=hint_coords,
         )
         if result:
             if _is_sane(result, place):
@@ -243,7 +262,7 @@ async def resolve(
             # 距離離譜:不直接回,但保留為 anchor(可能是同名地點)
             anchor_coords.append(result)
         for p in slow:
-            r = await _safe_lookup(p, q, place.country)
+            r = await _safe_lookup(p, q, place.country, hint_coords)
             if r:
                 if _is_sane(r, place):
                     log.info("hit", query=q, provider=p.name, lat=r.lat, lng=r.lng)
@@ -256,10 +275,51 @@ async def resolve(
         n_anchors=len(anchor_coords),
     )
 
+    # 精準命中嘗試:Overpass 在 vision 粗座標附近做 OSM 結構化查詢。
+    # 多數情況下,小景點若在 OSM 但 Nominatim/Photon 字串搜尋找不到,
+    # Overpass 的 around-radius + name regex 仍能精確命中。
+    precise = await _try_overpass(place, anchor_coords)
+    if precise:
+        return precise
+
     if enable_rerank:
         return await _try_rerank(place, anchor_coords)
 
     return None
+
+
+async def _try_overpass(
+    place: PlaceCandidates, anchor_coords: list[Coords]
+) -> Optional[Coords]:
+    """用 Overpass 在 vision 粗座標附近精準搜尋 OSM。
+    成功 → 返回精確座標(非 approximate)。失敗 → None,鼓勵後續 rerank。"""
+    if not place.approximate_coords_guess or not place.candidates:
+        return None
+    primary = place.candidates[0]
+    try:
+        result = await overpass.lookup(
+            primary,
+            hint_country=place.country,
+            hint_coords=place.approximate_coords_guess,
+        )
+    except ProviderError as e:
+        log.warning("overpass provider error", error=str(e))
+        return None
+    except Exception as e:
+        log.warning("overpass crash", error=str(e))
+        return None
+    if not result:
+        return None
+    if not _is_sane(result, place):
+        # 不應該發生(Overpass around 已限制半徑),但保險
+        anchor_coords.append(result)
+        return None
+    log.info(
+        "resolve: overpass precise hit",
+        lat=result.lat, lng=result.lng,
+        canonical=result.canonical_name,
+    )
+    return result
 
 
 async def _try_rerank(

@@ -51,8 +51,20 @@ class GeocoderProvider(ABC):
     name: str
 
     @abstractmethod
-    async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
-        """單次查詢。找不到回 None,網路錯誤拋 ProviderError。"""
+    async def lookup(
+        self,
+        query: str,
+        hint_country: str = "",
+        hint_coords: Optional[tuple[float, float, int]] = None,
+    ) -> Optional[Coords]:
+        """單次查詢。找不到回 None,網路錯誤拋 ProviderError。
+
+        Args:
+            query: 查詢字串
+            hint_country: 國家名稱(用於過濾)
+            hint_coords: (lat, lng, accuracy_m) — 粗略位置提示,
+                provider 可用於 location bias(Photon/Nominatim 支援)。
+        """
 
 
 class ProviderError(Exception):

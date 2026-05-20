@@ -25,7 +25,14 @@ def _api_url(lang: str) -> str:
 class WikipediaProvider(GeocoderProvider):
     name = "wikipedia"
 
-    async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
+    async def lookup(
+        self,
+        query: str,
+        hint_country: str = "",
+        hint_coords: Optional[tuple[float, float, int]] = None,
+    ) -> Optional[Coords]:
+        # hint_coords 對 Wikipedia 查詢沒幫助(article-based search),忽略。
+        _ = hint_coords
         if not query.strip():
             return None
         langs = wiki_langs_for(hint_country, query) or [_DEFAULT_LANG]

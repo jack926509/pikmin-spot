@@ -53,7 +53,13 @@ def _has_cjk(s: str) -> bool:
 class WikidataProvider(GeocoderProvider):
     name = "wikidata"
 
-    async def lookup(self, query: str, hint_country: str = "") -> Optional[Coords]:
+    async def lookup(
+        self,
+        query: str,
+        hint_country: str = "",
+        hint_coords: Optional[tuple[float, float, int]] = None,
+    ) -> Optional[Coords]:
+        _ = hint_coords  # Wikidata 是實體搜尋,座標提示無用
         if not query.strip():
             return None
         # wbsearchentities is an entity-name search; address-style strings
